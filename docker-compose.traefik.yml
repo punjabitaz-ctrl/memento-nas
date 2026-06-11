@@ -1,0 +1,93 @@
+version: "3.9"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Memento — Traefik variant
+# Use this if you have Traefik running on your NAS for HTTPS + routing.
+#
+# Usage:
+#   docker compose -f docker-compose.traefik.yml up -d --build
+#
+# Prerequisites:
+#   - Traefik v2/v3 running with a network named "traefik_proxy"
+#   - MEMENTO_DOMAIN set in .env (e.g. memento.your-nas.local)
+#   - TRUST_PROXY=true in .env (so secure cookies work through Traefik)
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  memento:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: memento
+    env_file: .env
+
+    # No direct port exposure — traffic comes through Traefik
+    expose:
+      - "3002"
+
+    volumes:
+      - memento-db:/data/db
+      - memento-vault:/data/vault
+      - memento-sessions:/data/sessions
+
+    restart: unless-stopped
+
+    networks:
+      - traefik_proxy
+      - internal
+
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik_proxy"
+
+      # HTTP router → HTTPS redirect (remove if you don't want HTTP)
+      - "traefik.http.routers.memento-http.rule=Host(`${MEMENTO_DOMAIN}`)"
+      - "traefik.http.routers.memento-http.entrypoints=web"
+      - "traefik.http.routers.memento-http.middlewares=https-redirect"
+
+      # HTTPS router
+      - "traefik.http.routers.memento.rule=Host(`${MEMENTO_DOMAIN}`)"
+      - "traefik.http.routers.memento.entrypoints=websecure"
+      - "traefik.http.routers.memento.tls=true"
+      - "traefik.http.routers.memento.tls.certresolver=letsencrypt"
+
+      # Service
+      - "traefik.http.services.memento.loadbalancer.server.port=3002"
+
+      # Middleware: HTTPS redirect
+      - "traefik.http.middlewares.https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.https-redirect.redirectscheme.permanent=true"
+
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:3002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+    stop_grace_period: 30s
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  memento-db:
+    name: memento-db
+  memento-vault:
+    name: memento-vault
+  memento-sessions:
+    name: memento-sessions
+
+networks:
+  traefik_proxy:
+    external: true
+  internal:
+    driver: bridge

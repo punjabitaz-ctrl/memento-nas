@@ -1,0 +1,66 @@
+version: "3.9"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Memento — Primary Docker Compose
+# Usage:
+#   1. cp .env.example .env && nano .env     # set MEMENTO_KEY etc.
+#   2. docker compose up -d --build
+#   3. Open http://<your-nas-ip>:3002
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  memento:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: memento
+
+    # Read environment from .env file
+    env_file: .env
+
+    ports:
+      # HOST_PORT maps to container port 3002.
+      # Change HOST_PORT in .env if 3002 conflicts with another service.
+      - "${HOST_PORT:-3002}:3002"
+
+    volumes:
+      # ── Persistent volumes (include both in your NAS backup plan) ────────
+      - memento-db:/data/db         # SQLite database
+      - memento-vault:/data/vault   # AES-256 encrypted media files
+      - memento-sessions:/data/sessions # Session store
+
+    restart: unless-stopped
+
+    # Resource limits — tune for your NAS
+    # Minimum: 256MB RAM. Recommended: 512MB.
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          memory: 128M
+
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:3002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+    # Graceful shutdown — gives the app 30s to close SQLite cleanly
+    stop_grace_period: 30s
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  memento-db:
+    name: memento-db
+  memento-vault:
+    name: memento-vault
+  memento-sessions:
+    name: memento-sessions

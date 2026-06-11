@@ -1,0 +1,13 @@
+**/.git
+**/.gitignore
+**/node_modules
+**/dist
+**/.env
+**/.env.*
+!**/.env.example
+**/npm-debug.log
+**/*.md
+!README.md
+**/coverage
+**/.DS_Store
+**/Thumbs.db
