@@ -20,15 +20,22 @@ const EXT = {
 const extFor = (mime) => EXT[String(mime).split(';')[0].toLowerCase()] || 'bin';
 const JSON_HEADERS = { 'content-type': 'application/json' };
 
+/** Largest response body we buffer from a node (success or error). A bigger one is a misbehaving node. */
+const MAX_RESPONSE_BYTES = 32 * 1024 * 1024;
+/** How long a node gets to accept the TCP connection (DNS lookup included), separate from the call deadline. */
+const CONNECT_TIMEOUT_MS = 8000;
+
 /**
  * One HTTP call to a node over node:http(s). Not fetch: undici imposes a hard 300 s headers/body timeout that
- * cannot be extended, which would cut off long transcriptions. `timeoutMs` is the overall deadline for the call.
+ * cannot be extended, which would cut off long transcriptions. `timeoutMs` is the overall deadline for the call;
+ * `connectTimeoutMs` (default 8 s) separately bounds connecting, so a powered-off node fails fast instead of
+ * holding a job for the whole deadline. Response bodies over 32 MiB are refused (nodeFailure).
  * Resolves { status, text } for 2xx; throws NodeError otherwise. Error text never includes the response body
  * (servers echo the offending input back, and that input is user text), the URL or the token.
  * `body` may be a string, a Buffer or a Readable. An error emitted by a Readable body is the CALLER's error
  * (e.g. a vault decrypt failure): it is rethrown untouched, with no `nodeFailure`, and the node is not blamed.
  */
-function request(node, path, { method = 'POST', headers = {}, body } = {}, timeoutMs) {
+function request(node, path, { method = 'POST', headers = {}, body, connectTimeoutMs = CONNECT_TIMEOUT_MS } = {}, timeoutMs) {
   return new Promise((resolve, reject) => {
     const url = new URL(node.url + path);
     const h = { ...headers };
@@ -37,11 +44,14 @@ function request(node, path, { method = 'POST', headers = {}, body } = {}, timeo
     if (body != null && !isStream) h['content-length'] = Buffer.byteLength(body);
     let req;
     let timer;
+    let connectTimer;
     let done = false;
+    const tooLarge = () => new NodeError(`${node.name} sent a response that is too large (over ${MAX_RESPONSE_BYTES / 1024 / 1024} MiB)`, true);
     const settle = (err, value) => {
       if (done) return;
       done = true;
       clearTimeout(timer);
+      clearTimeout(connectTimer);
       if (err && req) req.destroy();
       if (!err && req && !req.writableFinished) req.destroy(); // node answered before we finished sending
       if (isStream) body.destroy();
@@ -53,7 +63,13 @@ function request(node, path, { method = 'POST', headers = {}, body } = {}, timeo
     req = lib.request(url, { method, headers: h }, (res) => {
       const ok = res.statusCode >= 200 && res.statusCode < 300;
       const chunks = [];
-      res.on('data', (c) => { if (ok) chunks.push(c); }); // error bodies are read and discarded, never kept
+      let size = 0;
+      if (Number(res.headers['content-length']) > MAX_RESPONSE_BYTES) return settle(tooLarge());
+      res.on('data', (c) => {
+        size += c.length;
+        if (size > MAX_RESPONSE_BYTES) return settle(tooLarge()); // destroys the request (and with it this response)
+        if (ok) chunks.push(c); // error bodies are read and discarded, never kept
+      });
       res.on('error', (e) => settle(new NodeError(`${node.name} unreachable (${e.code || e.name})`, true)));
       res.on('end', () => {
         if (ok) return settle(null, { status: res.statusCode, text: Buffer.concat(chunks).toString('utf8') });
@@ -63,6 +79,11 @@ function request(node, path, { method = 'POST', headers = {}, body } = {}, timeo
       res.on('close', () => { if (!res.complete) settle(new NodeError(`${node.name} unreachable (ECONNRESET)`, true)); });
     });
     req.on('error', (e) => settle(new NodeError(`${node.name} unreachable (${e.code || e.name})`, true)));
+    req.on('socket', (sock) => {
+      if (done || !sock.connecting) return; // a reused keep-alive socket is already connected
+      connectTimer = setTimeout(() => settle(new NodeError(`${node.name} unreachable (connect timeout)`, true)), connectTimeoutMs);
+      sock.once('connect', () => clearTimeout(connectTimer));
+    });
     if (isStream) body.pipe(req); // respects back-pressure
     else req.end(body);
   });
@@ -132,4 +153,4 @@ async function transcribe(node, readable, { mime }) {
   }
 }
 
-module.exports = { NodeError, health, embed, chat, transcribe, request };
+module.exports = { NodeError, health, embed, chat, transcribe, request, MAX_RESPONSE_BYTES, CONNECT_TIMEOUT_MS };

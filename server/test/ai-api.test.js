@@ -197,6 +197,24 @@ test('ownership: ask rows are per user, the limiter is per user, transcribe hide
   }
 });
 
+test('Ask answers 502 with a friendly message (never the node error text) when the chat node refuses the request', async () => {
+  const s = await boot();
+  try {
+    await s.owner.json('POST', '/api/memories', { form: voice() });
+    await s.ai.worker.drain();
+    for (const status of [401, 400]) {
+      s.fake.state.failStatus = status; // e.g. wrong token, or "context too long"
+      const r = await s.kid.json('POST', '/api/ask', { json: { question: 'What did Grandpa say about the orchard?' } });
+      assert.equal(r.status, 502, String(status));
+      assert.equal(r.data.error, 'The AI helper could not answer that. Ask the vault owner to check the AI node settings.');
+      const raw = JSON.stringify(r.data);
+      assert.ok(!raw.includes('desk') && !raw.includes(String(status)) && !raw.includes('HTTP'), raw);
+    }
+  } finally {
+    await s.close();
+  }
+});
+
 test('Ask answers 503 (not 500) when the chat node fails', async () => {
   const s = await boot();
   try {

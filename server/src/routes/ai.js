@@ -9,6 +9,7 @@ const jobs = require('../ai/jobs');
 const { queueTranscribe } = require('../ai/hooks');
 const { backfill } = require('../ai/backfill');
 const { NodeUnavailable, NoEligibleNode } = require('../ai/errors');
+const { NodeError } = require('../ai/client');
 
 module.exports = function aiRoutes({ db, config, requireAuth, requireWriter, registry }) {
   const r = express.Router();
@@ -58,6 +59,10 @@ module.exports = function aiRoutes({ db, config, requireAuth, requireWriter, reg
       }
       if (e instanceof NodeUnavailable) {
         throw new HttpError(503, 'The AI helper is not reachable right now. Try again when the computer that runs it is on.');
+      }
+      // The chat node refused the request (wrong token, prompt too long, ...). Its error text is never passed on.
+      if (e instanceof NodeError) {
+        throw new HttpError(502, 'The AI helper could not answer that. Ask the vault owner to check the AI node settings.');
       }
       throw e;
     }

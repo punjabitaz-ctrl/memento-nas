@@ -82,14 +82,18 @@ function makeEmbedHandler({ db, config, registry, client = clientDefault }) {
     const people = db.prepare('SELECT name FROM memory_people WHERE memory_id = ? ORDER BY name').all(m.id).map((p) => p.name);
     const inputs = pieces.map((p) => embedInput(m, who, people, p));
 
+    // A batch can take minutes, so privacy is re-read right before EVERY node attempt (failover included): a
+    // memory made private meanwhile must not reach a non-local node (withNode skips those nodes, or throws
+    // NoEligibleNode). A memory deleted meanwhile counts as private, the most restrictive answer.
+    const privacyNow = () => {
+      const row = db.prepare('SELECT privacy FROM memories WHERE id = ?').get(m.id);
+      return row ? row.privacy : 'private';
+    };
     const vectors = [];
     for (let i = 0; i < inputs.length; i += BATCH) {
       const batch = inputs.slice(i, i + BATCH);
-      // A batch can take minutes, so privacy is re-read right before each request: a memory made private
-      // meanwhile must not reach a non-local node (withNode then throws NoEligibleNode).
-      const cur = db.prepare('SELECT privacy FROM memories WHERE id = ?').get(m.id);
-      if (!cur) return { skip: 'memory no longer exists' };
-      vectors.push(...(await registry.withNode('embed', cur.privacy, (node) => client.embed(node, batch))));
+      if (!db.prepare('SELECT 1 FROM memories WHERE id = ?').get(m.id)) return { skip: 'memory no longer exists' };
+      vectors.push(...(await registry.withNode('embed', privacyNow, (node) => client.embed(node, batch))));
     }
     const dim = vectors[0].length;
     if (vectors.some((v) => v.length !== dim)) throw new Error('embedding dimension changed within one memory');

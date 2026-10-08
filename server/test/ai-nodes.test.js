@@ -254,3 +254,134 @@ test('registry: privacy gate fails closed on unknown values and non-boolean loca
   await assert.rejects(sneaky.withNode('embed', 'private', async () => 1), NoEligibleNode);
   await fake.close();
 });
+
+// ---- Fix wave A: privacy re-check per attempt, response cap, connect timeout ---------------------
+
+test('registry: a privacy getter is re-read before EVERY attempt; nodes no longer allowed are skipped', async () => {
+  const r = reg([
+    { name: 'a', url: 'http://127.0.0.1:1', capabilities: ['embed'], models: { embed: 'e' }, priority: 1 },
+    { name: 'b', url: 'http://127.0.0.1:1', capabilities: ['embed'], models: { embed: 'e' }, priority: 2 },
+    { name: 'c', url: 'http://127.0.0.1:1', capabilities: ['embed'], models: { embed: 'e' }, priority: 3, local: true },
+  ]);
+  let privacy = 'family';
+  let reads = 0;
+  const tried = [];
+  const out = await r.withNode('embed', () => { reads += 1; return privacy; }, async (n) => {
+    tried.push(n.name);
+    if (n.name === 'a') { privacy = 'private'; throw new client.NodeError('a died', true); }
+    return n.name;
+  });
+  assert.equal(out, 'c');
+  assert.deepEqual(tried, ['a', 'c'], 'b (not local) was skipped once the memory became private');
+  assert.ok(reads >= 3, `getter read before each attempt (reads=${reads})`);
+});
+
+test('registry: privacy getter that tightens with no local node left => NoEligibleNode, nothing else called', async () => {
+  const r = reg([
+    { name: 'a', url: 'http://127.0.0.1:1', capabilities: ['embed'], models: { embed: 'e' }, priority: 1 },
+    { name: 'b', url: 'http://127.0.0.1:1', capabilities: ['embed'], models: { embed: 'e' }, priority: 2 },
+  ]);
+  let privacy = 'family';
+  const tried = [];
+  await assert.rejects(r.withNode('embed', () => privacy, async (n) => {
+    tried.push(n.name);
+    privacy = 'private';
+    throw new client.NodeError('down', true);
+  }), NoEligibleNode);
+  assert.deepEqual(tried, ['a']);
+});
+
+test('registry: a privacy getter returning an invalid value fails closed (TypeError), also mid-failover', async () => {
+  const fake = await startFakeNode();
+  const r = reg([nodeCfg(fake, { name: 'a', priority: 1 }), nodeCfg(fake, { name: 'b', priority: 2, local: true })]);
+  for (const bad of [undefined, null, 'Private', '', 1]) {
+    let called = false;
+    await assert.rejects(r.withNode('embed', () => bad, async () => { called = true; }), TypeError);
+    assert.equal(called, false);
+  }
+  const vals = ['family', 'family', 'nonsense'];
+  const tried = [];
+  await assert.rejects(r.withNode('embed', () => (vals.length > 1 ? vals.shift() : vals[0]), async (n) => {
+    tried.push(n.name);
+    throw new client.NodeError('down', true);
+  }), TypeError);
+  assert.deepEqual(tried, ['a'], 'the second attempt never happened');
+  await fake.close();
+});
+
+test('response cap: a node streaming a huge 200 body is cut off at 32 MiB with a nodeFailure', async () => {
+  const chunk = Buffer.alloc(1024 * 1024, 0x61);
+  const srv = await rawServer((req, res) => {
+    req.resume();
+    let wrote = 0; // per response: streams up to 200 MiB (no content-length) until the client hangs up
+    res.writeHead(Number(req.headers['x-status'] || 200), { 'content-type': 'application/json' });
+    const pump = () => {
+      while (wrote < 200 * 1024 * 1024) {
+        wrote += chunk.length;
+        if (!res.write(chunk)) return res.once('drain', pump);
+      }
+      res.end();
+    };
+    res.on('close', () => { wrote = Infinity; });
+    pump();
+  });
+  const node = { token: 'tok', local: false, name: 'huge', url: srv.url };
+  for (const status of ['200', '500']) {
+    await assert.rejects(
+      client.request(node, '/v1/embeddings', { headers: { 'x-status': status }, body: '{}' }, 60_000),
+      (e) => {
+        assert.ok(e instanceof client.NodeError, String(e));
+        assert.equal(e.nodeFailure, true);
+        assert.match(e.message, /^huge /);
+        assert.match(e.message, /too large/);
+        assert.ok(!e.message.includes('127.0.0.1') && !e.message.includes('tok') && !e.message.includes('aaaa'));
+        return true;
+      }
+    );
+  }
+  await srv.close();
+});
+
+test('response cap: a declared content-length over the cap fails before reading the body', async () => {
+  const srv = await rawServer((req, res) => {
+    req.resume();
+    res.writeHead(200, { 'content-type': 'application/json', 'content-length': String(64 * 1024 * 1024) });
+    res.write('{');
+  });
+  const node = { token: '', local: false, name: 'liar', url: srv.url };
+  await assert.rejects(client.request(node, '/v1/models', { method: 'GET' }, 10_000), (e) => e.nodeFailure === true && /^liar .*too large/.test(e.message));
+  await srv.close();
+});
+
+test('connect timeout: a node that never completes the connection fails fast with "connect timeout"', async () => {
+  // Technique: the TCP handshake to a LOCAL port always completes (the kernel accepts it), so a real local
+  // server cannot model "never connects", and a non-routable address behaves differently per network.
+  // Instead dns.lookup is stubbed for one made-up name so it never answers: the socket stays in its
+  // `connecting` state exactly like a SYN that is never answered, deterministically and with no network.
+  const dns = require('node:dns');
+  const orig = dns.lookup;
+  dns.lookup = function (host, ...rest) { if (host === 'stalled-node.internal') return undefined; return orig.call(this, host, ...rest); };
+  try {
+    const node = { token: '', local: false, name: 'stalled', url: 'http://stalled-node.internal:8000' };
+    const t0 = Date.now();
+    await assert.rejects(
+      client.request(node, '/v1/models', { method: 'GET', connectTimeoutMs: 200 }, 60_000),
+      (e) => e instanceof client.NodeError && e.nodeFailure === true && e.message === 'stalled unreachable (connect timeout)'
+    );
+    assert.ok(Date.now() - t0 < 5000, 'the connect timeout fired, not the 60 s overall deadline');
+    assert.equal(client.CONNECT_TIMEOUT_MS, 8000, 'default connect timeout is 8 s');
+  } finally {
+    dns.lookup = orig;
+  }
+});
+
+test('connect timeout: does not limit a connected node that is slow to answer', async () => {
+  const srv = await rawServer((req, res) => {
+    req.resume();
+    req.on('end', () => setTimeout(() => { res.writeHead(200); res.end('{}'); }, 400));
+  });
+  const node = { token: '', local: false, name: 'slowish', url: srv.url };
+  const r = await client.request(node, '/v1/models', { method: 'GET', connectTimeoutMs: 100 }, 5000);
+  assert.equal(r.status, 200);
+  await srv.close();
+});

@@ -44,6 +44,9 @@ function assertPrivateUrl(raw) {
     throw new Error('is not a valid URL (check the AI_NODES url field)');
   }
   if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error('URL must start with http:// or https://');
+  if (u.username || u.password) {
+    throw new Error('URL must not contain a user name or password (user:pass@); put the node token in the "token" field instead');
+  }
   if (!isPrivateHost(u.hostname)) {
     throw new Error(
       `${u.hostname} is not on a private network. AI nodes must be loopback, a LAN address, a Tailscale address (100.64.0.0/10 or *.ts.net) or a *.local/*.lan/*.internal name`

@@ -106,3 +106,39 @@ test('embed model strings are trimmed before the same-model check', () => {
   assert.equal(cfg.nodes[1].models.embed, 'e');
   assert.equal(cfg.embedModel, 'e');
 });
+
+// ---- Fix wave A: hardening of node settings ---------------------------------------------------
+
+const nodesProblems = (n) => {
+  const p = [];
+  parseAi({ AI_ENABLED: 'true', AI_NODES: JSON.stringify([n]) }, p);
+  return p.join(' | ');
+};
+
+test('a node token with control characters (header injection) is refused, and the token is never echoed', () => {
+  for (const tok of ['abc\r\nX-Evil: 1', 'abc\ndef', 'abc\rdef', 'tab\there', 'nul\u0000x', 'del\u007fx', 'esc\u001bx']) {
+    const msg = nodesProblems(node({ token: tok }));
+    assert.match(msg, /AI_NODES\[0\]\.token .*control character/, JSON.stringify(tok));
+    assert.ok(!msg.includes(tok) && !msg.includes('abc') && !msg.includes('X-Evil'), 'token not echoed');
+  }
+  assert.equal(nodesProblems(node({ token: 'sk-ok_token.with-normal~chars' })), '');
+  assert.match(problems({ AI_ENABLED: 'true', AI_NODES: JSON.stringify([node({ token: 'a\nb' })]) }), /control character/);
+});
+
+test('a node URL with a user name or password is refused without echoing the URL', () => {
+  for (const url of ['http://user:hunter2@127.0.0.1:8000', 'http://user@127.0.0.1:8000', 'http://:hunter2@nas.local']) {
+    const msg = nodesProblems(node({ url }));
+    assert.match(msg, /AI_NODES\[0\]\.url: .*user name or password/, url);
+    assert.ok(!msg.includes('hunter2') && !msg.includes('user@') && !msg.includes(url), 'URL not echoed');
+  }
+  assert.throws(() => assertPrivateUrl('http://u:p@127.0.0.1'), /user name or password/);
+});
+
+test('priority must be a real finite number: null, empty string, booleans and strings are refused', () => {
+  for (const priority of [null, '', true, false, '5', 'abc', [], {}, [3]]) {
+    assert.match(nodesProblems(node({ priority })), /AI_NODES\[0\]\.priority must be a number/, JSON.stringify(priority));
+  }
+  assert.equal(nodesProblems(node({ priority: 0 })), '');
+  assert.equal(nodesProblems(node({ priority: -5.5 })), '');
+  assert.equal(nodesProblems(node({})), '', 'priority stays optional');
+});

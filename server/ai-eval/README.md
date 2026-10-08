@@ -15,7 +15,8 @@ WER and CER show `n/a` for files that have no `.txt` beside them. Scoring ignore
 and other combining marks, so a missing mark in Gurmukhi or Devanagari counts as an error.
 
 The script exits 0 when at least one file was transcribed, 1 when every file failed, and 2 when the arguments or the folder
-are wrong.
+are wrong. Like the server, it only sends recordings to a `--node` on a private network (the same rule as `AI_NODES`); any
+other URL, or one with a user name or password in it, exits 2 before anything is sent.
 
 ## Reading the numbers
 - **WER is misleading for languages written without spaces between words** (for example Chinese, Japanese or Thai). WER splits on

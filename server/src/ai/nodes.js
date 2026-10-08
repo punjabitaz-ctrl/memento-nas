@@ -25,21 +25,30 @@ class NodeRegistry {
     return this.eligible(capability, privacy).length > 0;
   }
 
-  /** Runs fn(node) on the best eligible node, failing over on node failures. */
+  /**
+   * Runs fn(node) on the best eligible node, failing over on node failures.
+   * `privacy` is 'family' / 'private', or a function returning one of them. A function is called again right
+   * before EVERY attempt (failover included), so work whose memory became private while an earlier node was
+   * busy never moves on to a node that is no longer allowed. Any other value (or return value) is a TypeError.
+   */
   async withNode(capability, privacy, fn) {
-    const list = this.eligible(capability, privacy);
-    if (!list.length) {
-      throw new NoEligibleNode(
-        privacy === 'private'
-          ? `no local node can do "${capability}" for private memories`
-          : `no configured node offers "${capability}"`
-      );
-    }
+    const current = typeof privacy === 'function' ? () => privacy() : () => privacy;
+    const noneFor = (p) => new NoEligibleNode(
+      p === 'private'
+        ? `no local node can do "${capability}" for private memories`
+        : `no configured node offers "${capability}"`
+    );
+    let p = current();
+    const list = this.eligible(capability, p);
+    if (!list.length) throw noneFor(p);
     const t = this.now();
     const ready = list.filter((n) => n.healthy || t - n.failedAt >= this.retryAfterMs);
     const order = [...ready, ...list.filter((n) => !ready.includes(n))]; // cooling-down nodes only as a last resort
     let last;
     for (const n of order) {
+      p = current();
+      // Re-checked per attempt (throws TypeError on a bad value). Only nodes from the original list are tried.
+      if (!this.eligible(capability, p).includes(n)) continue;
       try {
         const out = await fn(n);
         n.healthy = true;
@@ -54,6 +63,8 @@ class NodeRegistry {
         last = e;
       }
     }
+    // Privacy tightened mid-way and nothing that is still allowed exists: not retryable as "unavailable".
+    if (!last || !this.eligible(capability, p).length) throw noneFor(p);
     throw new NodeUnavailable(`no AI node answered for "${capability}" (${last.message})`);
   }
 

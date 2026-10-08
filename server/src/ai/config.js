@@ -42,12 +42,15 @@ function parseNodes(raw, problems) {
         problems.push(`${where}.models.${c} is required because the node declares "${c}".`);
       }
     }
-    const priority = n.priority === undefined ? 100 : Number(n.priority);
-    if (!Number.isFinite(priority)) problems.push(`${where}.priority must be a number.`);
-    out.push({
-      name, url, capabilities: caps, models, local: n.local === true, priority,
-      token: typeof n.token === 'string' ? n.token : '',
-    });
+    // A real JSON number only: null, '', true and "5" were silently coerced before, which hid typos.
+    const priority = n.priority === undefined ? 100 : n.priority;
+    if (typeof priority !== 'number' || !Number.isFinite(priority)) problems.push(`${where}.priority must be a number.`);
+    const token = typeof n.token === 'string' ? n.token : '';
+    // It goes into an HTTP header: a line break would inject headers. The value itself is never echoed.
+    if (/[\u0000-\u001f\u007f]/.test(token)) {
+      problems.push(`${where}.token contains a control character (such as a line break or tab); remove it.`);
+    }
+    out.push({ name, url, capabilities: caps, models, local: n.local === true, priority, token });
   });
   return out;
 }

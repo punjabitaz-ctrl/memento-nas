@@ -15,6 +15,7 @@ const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const client = require('../src/ai/client');
 const { wer, cer } = require('../src/ai/metrics');
+const { assertPrivateUrl } = require('../src/ai/netguard');
 
 const run = promisify(execFile);
 const AUDIO = new Set(['.wav', '.mp3', '.m4a', '.ogg', '.opus', '.flac', '.webm', '.mp4', '.mov', '.aac']);
@@ -31,6 +32,12 @@ function args() {
   const out = { node: get('node'), model: get('model'), dir: get('dir'), token: get('token') || '', out: get('out') };
   if (!out.node || !out.model || !out.dir) {
     fail('usage: node ai-eval/run.js --node <url> --model <name> --dir <folder> [--token T] [--out results.md]');
+  }
+  // Same rule as the server: recordings are only ever sent to a node on a private network.
+  try {
+    out.node = assertPrivateUrl(out.node);
+  } catch (e) {
+    fail(`--node ${e.message}`);
   }
   return out;
 }

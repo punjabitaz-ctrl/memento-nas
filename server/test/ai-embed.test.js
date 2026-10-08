@@ -85,6 +85,36 @@ function setup(nodes) {
 }
 const jobFor = (memoryId) => ({ id: 'j', kind: 'embed', memory_id: memoryId });
 
+test('embed: privacy is re-read before every node ATTEMPT: after a failover the now-private batch skips non-local B', async () => {
+  let w;
+  let memoryId;
+  // node A answers 500 only AFTER the owner made the memory private
+  const srvA = require('node:http').createServer((req, res) => {
+    req.resume();
+    req.on('end', () => {
+      w.db.prepare("UPDATE memories SET privacy = 'private' WHERE id = ?").run(memoryId);
+      res.writeHead(500);
+      res.end('{}');
+    });
+  });
+  await new Promise((r) => srvA.listen(0, '127.0.0.1', r));
+  const b = await startFakeNode();
+  const c = await startFakeNode();
+  const s = setup([
+    nodeCfg({ url: `http://127.0.0.1:${srvA.address().port}` }, { name: 'a', priority: 1 }),
+    nodeCfg(b, { name: 'b', priority: 2 }),
+    nodeCfg(c, { name: 'c', priority: 3, local: true }),
+  ]);
+  w = s.w;
+  memoryId = addMemory(w.db, { by: s.u, title: 'Secret', content: 'the safe combination is in the blue tin' });
+  await makeEmbedHandler(w)(jobFor(memoryId));
+  assert.equal(b.calls.length, 0, 'the non-local node B never saw the now-private text');
+  assert.equal(c.calls.length, 1, 'the local node C embedded it');
+  assert.ok(w.db.prepare('SELECT COUNT(*) c FROM chunks WHERE memory_id = ?').get(memoryId).c > 0);
+  await new Promise((r) => { srvA.closeAllConnections(); srvA.close(r); });
+  await b.close(); await c.close(); w.close();
+});
+
 test('embeds a memory: header context goes to the node, raw chunk text and unit vectors are stored', async () => {
   const fake = await startFakeNode();
   const { w, u } = setup([nodeCfg(fake)]);
