@@ -90,21 +90,35 @@ Family members are created by the owner on the **Family** page (no email needed)
 
 With no `ANTHROPIC_API_KEY`, the "Tidy up" button uses a built-in offline organizer to suggest tags, people, a date and a summary, and "Tell the story" builds a narrative from stored text, all on your NAS.
 
-If you set a key, each memory gets an **"Ask Claude"** checkbox. Only the text of that one memory is sent, only when ticked, and never files. Audio is not transcribed (type the transcript yourself).
+If you set a key, each memory gets an **"Ask Claude"** checkbox. Only the text of that one memory is sent, only when ticked, and never files. Claude never sees audio; to get transcripts, see the next section.
 
-## 5. What's inside
+## 5. Local AI (optional)
+
+Off by default. If you run AI models on a machine you own (for example a desktop with a GPU), Memento can:
+
+- **transcribe voice stories**, so people can search for what was said (a transcript someone has typed or corrected is never overwritten), and
+- let family members **ask the archive** questions and get short answers that cite the stories they came from. If the archive has no record, the question can be sent to an elder as a new prompt.
+
+Privacy in short: Memento only talks to the nodes you list in `AI_NODES`, and refuses to start if one is not on your own network (loopback, LAN or Tailscale). Family memories are sent to those machines; *private* memories are never sent to a node unless you flag it `local: true` (a model running on the NAS itself). What a node stores or logs is up to the software on it, so check it. Details: `SECURITY.md`.
+
+How to set it up: `ai-node/README.md` (desktop node kit) and the `AI_*` variables in `.env.example`. Choose models by measuring them on your own recordings with `server/ai-eval`. So far this has only been tested against a fake node, not a real model.
+
+## 6. What's inside
 
 ```
-server/   Express API, AES-256-GCM vault, SQLite, tests (npm test)
+server/   Express API, AES-256-GCM vault, SQLite, local AI layer, tests (npm test)
 client/   React app (Vite); built into client/dist and served by the server
+ai-node/  Optional kit for running the AI models on another machine
+e2e/      Browser tests (Playwright): run.mjs (whole app), ai.mjs (transcripts + Ask)
 Dockerfile, docker-compose.yml, docker-compose.traefik.yml, .env.example, generate-key.sh
 ```
 
 Development: `cd server && npm i && npm test`; `cd client && npm i && npm run dev` (proxies to a server on :3002).
 
-## 6. Known limits
+## 7. Known limits
 
-- Voice recordings aren't transcribed automatically
+- Voice recordings are only transcribed if you set up local AI (section 5); accuracy per language is not yet measured, and recordings that mix languages are expected to be weaker
+- Answers from "Ask the archive" can still misread a story; check the cited memories
 - No comments/reactions or book printing yet
 - Thumbnails aren't generated, so large photos load at full size; HEIC/RAW won't preview in browsers (downloads work)
 - Tested on x86-64; the Dockerfile targets arm64 too but that build is untested

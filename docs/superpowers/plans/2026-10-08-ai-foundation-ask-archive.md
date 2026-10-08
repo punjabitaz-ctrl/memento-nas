@@ -74,7 +74,7 @@ e2e/ai.mjs                       browser flow with a fake node
 - [ ] **Step 1: Create the working branch**
 
 ```bash
-cd C:/Users/AtlasRex/Downloads/memento-nas-v2.0/memento-nas
+cd <your clone of memento-nas>
 git checkout v2.0-source && git checkout -b ai-foundation
 ```
 
@@ -3998,8 +3998,8 @@ Expected: server tests all pass (91), client build succeeds, `✔ AI e2e passed`
 
 - [ ] **Step 11: Scan for personal details before pushing (the repo is public)**
 
-Run: `git grep -niE "job search|relocat|AtlasRex|@gmail|AYiN|AOOSTAR" -- . ':!package-lock.json'`
-Expected: no output. Fix any hit before continuing.
+Run: `git grep -niE "job[ ]search|reloca[t]|Atlas[R]ex|[@]gmail|AYi[N]|AOOSTA[R]" -- . ':!package-lock.json'`
+Expected: no output (the pattern is written so this line does not match itself; the one known false positive is a prompt in `server/src/data/prompts.json` (line 623)). Fix any other hit before continuing.
 
 - [ ] **Step 12: Commit, push, open the pull request**
 

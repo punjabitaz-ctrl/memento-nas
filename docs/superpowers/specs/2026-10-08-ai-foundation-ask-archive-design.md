@@ -1,6 +1,6 @@
 # Design: AI foundation + "Ask the archive"
 
-Status: draft for review · Date: 2026-10-08 · Scope: first AI slice of Memento NAS
+Status: implemented on branch ai-foundation, tested against a fake node only; synced with the code after review · Date: 2026-10-08 · Scope: first AI slice of Memento NAS
 
 ## 1. Purpose
 
@@ -49,8 +49,8 @@ If no node is reachable, jobs wait and the UI shows "transcript pending". The va
 | `server/src/ai/embed.js` | Chunk text, request embeddings, store vectors with model id and dimension | nodes, db |
 | `server/src/ai/retrieve.js` | Hybrid FTS5 + vector retrieval, always filtered through `VISIBLE` for the asking user | memories |
 | `server/src/ai/answer.js` | Build the grounded prompt, call chat, validate citations, shape the answer per persona | retrieve, nodes |
-| `server/src/routes/ai.js` | `POST /api/ask`, `POST /api/memories/:id/transcribe`, `PATCH` transcript, `GET /api/ai/status`, `POST /api/ask/:id/report`, `POST /api/ask/:id/forward` | the above |
-| `server/migrations/` | Ordered idempotent schema migrations (`meta.schema_version`). Prerequisite for the tables below (Sprint 1.6) | db |
+| `server/src/routes/ai.js` | `POST /api/ask`, `GET /api/ask/history`, `DELETE /api/ask/:id`, `POST /api/ask/:id/report`, `POST /api/ask/:id/forward`, `POST /api/memories/:id/transcribe`, `GET /api/ai/status`, `POST /api/ai/backfill`. (A transcript is edited through the existing memory `PATCH`.) | the above |
+| `server/src/migrations/` | Ordered idempotent schema migrations (`meta.schema_version`). Prerequisite for the tables below (Sprint 1.6) | db |
 | `ai-node/` | Compose file and docs to run the desktop node (faster-whisper server, Ollama/llama.cpp, embedding model) | none |
 | `server/ai-eval/` | Measurement harness run by the owner on real recordings | nodes |
 
@@ -59,14 +59,14 @@ Nodes expose **OpenAI-compatible HTTP** endpoints (`/v1/audio/transcriptions`, `
 ### 4.2 Data model additions
 
 - `ai_jobs(id, kind transcribe|embed, memory_id, media_id, status pending|running|done|failed, attempts, next_run_at, last_error, idempotency_key UNIQUE, created_at)`.
-- `memories.transcript` (exists) plus `transcript_source machine|human`, `transcript_languages` (JSON), `transcript_segments` (JSON with timestamps).
-- `chunks(id, memory_id, ord, text, lang, model, dim, embedding BLOB)`. Vectors are stored as float32 (or int8-quantized if measurement shows memory pressure) and scanned in batches. Family scale (tens of thousands of memories) makes an approximate index unnecessary; this is to be **confirmed by measurement**, not assumed.
-- `ask_log(id, user_id, question, answer, cited_memory_ids, outcome answered|no_record|reported, created_at)`: local, visible to its author, deletable.
-- `prompts` gains a `requested_by` and `source ask` marker for forwarded questions.
+- Transcript source and languages live on `memories` (`transcript_source ''|machine|human`, `transcript_languages` JSON; `memories.transcript` is the joined text). The per-file transcript text, segments (JSON with timestamps) and detected language live on `media` (`media.transcript`, `media.transcript_segments`, `media.transcript_language`).
+- `chunks(id, memory_id, ord, text, model, dim, embedding BLOB, created_at)` (the language is not stored in v1). Vectors are stored as float32 (or int8-quantized if measurement shows memory pressure) and scanned in batches. Family scale (tens of thousands of memories) makes an approximate index unnecessary; this is to be **confirmed by measurement**, not assumed.
+- `ask_log(id, user_id, question, answer, cited, outcome answered|no_record|reported, created_at)`: local, visible to its author, deletable.
+- `prompts` gains `source` (`'ask'` for forwarded questions), `requested_by` and `addressed_to` (JSON list of user ids).
 
 ### 4.3 Configuration
 
-`AI_NODES` (JSON or env list: url, capabilities, priority, optional token), `AI_ENABLED` (default false), `AI_MAX_CHUNK_TOKENS`. A node URL must resolve to a loopback, RFC1918 or Tailscale (100.64.0.0/10) address. Otherwise the server refuses to start with a clear message. Nothing is enabled by default.
+`AI_NODES` (JSON array: name, url, capabilities, a model per capability, optional priority, `local` and token), `AI_ENABLED` (default false), `AI_MAX_CHUNK_TOKENS`, `AI_POLL_MS`. A node URL must be loopback, RFC1918, Tailscale (100.64.0.0/10, `*.ts.net`), IPv6 ULA, `localhost`, a single-label name, or a `.local/.lan/.internal/.home.arpa` name. The check is by name or IP only (no DNS lookup), so it is a guard against mistakes, not against a hostile name server. Otherwise the server refuses to start with a clear message. Every `embed` node must use the same model. Nothing is enabled by default.
 
 ## 5. Ask-the-archive behaviour
 
@@ -114,3 +114,13 @@ Nodes expose **OpenAI-compatible HTTP** endpoints (`/v1/audio/transcriptions`, `
 ## 10. Later slices (not designed here)
 
 Elder interviewer (adaptive follow-up questions) · persona capability coaching · local R&D signals feeding the backlog · family comments and reactions · speaker diarization.
+
+## 11. Implementation notes (where the code differs from the draft above)
+
+- Plain HTTP to a node is accepted without a logged warning; use Tailscale or HTTPS off the local machine (SECURITY.md).
+- Persona only changes the style instruction given to the model. Retrieval scores, transcript source in the Ask answer and play-from-timestamp are not shown in the UI. Segments with timestamps are stored but not yet used.
+- The reply language follows the browser's language; translation of quoted excerpts is requested in the prompt, not a separate step.
+- A forwarded question becomes a prompt addressed to every enabled member whose persona is `elder`, not to chosen members. It is idempotent per user and question.
+- Privacy gate details: the privacy value must be exactly `family` or `private`; the question text is embedded on any embedding node (it is the asker's words); the asker's own private passages go to the chat model only if a `local: true` chat node exists.
+- No NAS-local fallback node ships with this slice; the `local: true` flag and its tests exist so one can be added after `ai-eval` shows what the NAS can run.
+- Jobs: a failure backs off 1 min doubling, `failed` after 6 attempts; an unreachable node defers a job without using an attempt; a node that is not allowed skips it. There is no resumable per-job progress, so a transcription restarts from the beginning.

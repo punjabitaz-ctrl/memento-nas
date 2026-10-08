@@ -13,7 +13,7 @@ Roles (separate from persona): **owner** (all + family management), **contributo
 
 ## 3. Goals / non-goals
 **Goals:** self-hosted on a NAS; files encrypted at rest; works offline on a LAN; zero third-party requests; family accounts without email; fast search; easy export.
-**Non-goals (v2.0):** public sharing, cloud sync, native mobile apps, multi-vault/multi-tenant, automatic transcription, social features, printing.
+**Non-goals (v2.0):** public sharing, cloud sync, native mobile apps, multi-vault/multi-tenant, social features, printing.
 
 ## 4. Functional requirements (all implemented unless marked ☐)
 **F1 Setup & accounts**
@@ -37,7 +37,8 @@ Roles (separate from persona): **owner** (all + family management), **contributo
 - Owner/any member can download a streamed zip of everything they can see.
 **F6 Operate**
 - `/health`, graceful shutdown, key-mismatch refusal, config validation, `reset-password.js`, structured error messages for the NAS admin.
-☐ **F7 Transcription** (local, privacy-preserving): not built.
+**F7 Transcription** (local, privacy-preserving): implemented against OpenAI-compatible local nodes (job queue with retries, per-file transcripts, a person's edits are never overwritten, per-file language detection). Off unless `AI_ENABLED=true`. Accuracy per language is **not yet measured**; run `server/ai-eval`.
+**F11 Ask the archive** (grounded, cited Q&A over the family's stories, persona-aware, forwards unanswered questions to elders as prompts): implemented against local nodes; every answer sentence must cite a memory the asker may see, and private memories never reach a remote node. Quality depends on the chosen models and has **not yet been measured**; tested against a fake node only.
 ☐ **F8 Comments & reactions**: not built.
 ☐ **F9 Thumbnails / HEIC preview**: not built.
 ☐ **F10 Key rotation tool**: not built.
@@ -46,7 +47,7 @@ Roles (separate from persona): **owner** (all + family management), **contributo
 | Area | Requirement | Status |
 |---|---|---|
 | Security | See SECURITY.md; AES-256-GCM chunked, bcrypt 12, CSRF header+origin, CSP, rate limit | Implemented, unit/integration tested |
-| Privacy | No external requests (browser asserted by E2E); Claude strictly opt-in | Verified in E2E |
+| Privacy | No external requests (browser asserted by E2E); Claude strictly opt-in; local AI only talks to configured private-network nodes, and private memories never reach a non-`local` node | Browser requests verified in E2E; node behaviour tested against a fake node only |
 | Reliability | Atomic writes (`.part`→rename); SQLite WAL + `synchronous=FULL`; stale `.part` cleanup; graceful SIGTERM 25 s | Implemented; power-loss behaviour untested |
 | Resource | Runs in 512 MB container limit | **Not measured**; verify in Sprint 1 |
 | Scale | Designed for a single family: ≤ ~20 users, tens of thousands of memories, TB of media | Not load-tested |

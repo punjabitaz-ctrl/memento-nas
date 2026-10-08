@@ -22,7 +22,7 @@ Status key: ☐ todo · ◐ in progress · ✔ done. Update this file as you wor
 | 1.3 | Snapshot → destroy container → restore dataset snapshot + same key on a fresh container | All media/stories readable (SPEC §6.6) |
 | 1.4 | Off-box replication or backup of the dataset (pick: second pool, USB, remote TrueNAS, cloud via encrypted dataset) | One restore from the off-box copy |
 | 1.5 | Test Safari/iOS recorder (mp4 path) and Firefox | Pass/fail noted per browser |
-| 1.6 | Add basic schema-migration mechanism (`meta.schema_version`, ordered idempotent steps) + test | Upgrade from a v2.0 DB works |
+| 1.6 | Add basic schema-migration mechanism (`meta.schema_version`, ordered idempotent steps) + test | Upgrade from a v2.0 DB works. Implemented on branch ai-foundation (`server/src/migrations/`, `server/test/migrate.test.js`); counts as done once merged |
 | 1.7 | Commit, tag `v2.0.0`, push to GitHub; README "Install on TrueNAS" section written from reality | Tagged release |
 **Acceptance:** SPEC §6 items 3–6, 8.
 
@@ -36,12 +36,12 @@ Status key: ☐ todo · ◐ in progress · ✔ done. Update this file as you wor
 | 2.5 | Elder-flow usability test with a real family member (owner to choose); log what confuses them | 5 concrete fixes |
 
 ## Sprint 3: Local transcription (privacy-preserving)
-| ☐ | Task | Notes |
+| Status | Task | Notes |
 |---|---|---|
-| 3.1 | Choose engine: whisper.cpp / faster-whisper container on the N150 (CPU only; measure real-time factor before committing) | Decision recorded in KB with measured numbers |
-| 3.2 | `POST /memories/:id/transcribe` streams decrypted audio to the local engine, saves `memories.transcript`, reindexes FTS | Never writes plaintext audio to disk |
-| 3.3 | UI: "Transcribe" button, progress, edit transcript | Elders can search by what they said |
-| 3.4 | Compose adds the transcription service on an internal network only | No internet egress |
+| ☐ | 3.1 Choose engine and models (desktop GPU node, or whisper.cpp / faster-whisper on the N150; measure with `server/ai-eval` before committing) | Decision recorded in KB §8.1 with measured numbers. Not started: needs real recordings and a real node |
+| ◐ | 3.2 `POST /memories/:id/transcribe` streams decrypted audio to the local engine, saves the transcript, reindexes FTS | Implemented against a fake node; real-node run pending. Never writes plaintext audio to disk. Also built: job queue, embeddings, hybrid retrieval, Ask the archive |
+| ◐ | 3.3 UI: "Transcribe" button, progress, edit transcript | Transcribe button and transcript status are done; no progress bar, and editing uses the existing Edit form |
+| ◐ | 3.4 Transcription service on a private network only | Server side done (node URLs must be loopback/LAN/Tailscale); the desktop kit is in `ai-node/` but has not been run end to end; no NAS-local node container yet |
 
 ## Sprint 4: Family features
 Comments and reactions (new tables, reuse `canView`) · notification-free "new since you last visited" · printable story/book export (PDF) · per-memory sharing to a subset of members (extends privacy model, so update SECURITY.md) · optional Claude narration (opt-in).
