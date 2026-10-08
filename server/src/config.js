@@ -6,6 +6,7 @@
  */
 const fs = require('node:fs');
 const path = require('node:path');
+const { parseAi } = require('./ai/config');
 
 const VERSION = '2.0.0';
 
@@ -43,6 +44,8 @@ function load(env = process.env) {
     problems.push('MAX_FILE_SIZE_MB must be a whole number between 1 and 50000.');
   }
 
+  const ai = parseAi(env, problems);
+
   const dataDir = path.resolve(env.DATA_DIR || '/data');
   const dirs = {
     data: dataDir,
@@ -79,6 +82,7 @@ function load(env = process.env) {
     aiModel: (env.MEMENTO_AI_MODEL || 'claude-haiku-4-5-20251001').trim(),
     clientDist: env.CLIENT_DIST ? path.resolve(env.CLIENT_DIST) : null,
     sessionDays: 30,
+    ai,
   };
 }
 
