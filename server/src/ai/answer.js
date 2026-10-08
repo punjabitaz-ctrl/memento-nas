@@ -13,7 +13,7 @@ const DEFAULT_PERSONA = 'archivist'; // the database default for users.persona
 const MAX_QUESTION = 1000;
 const MAX_TITLE = 200;
 const MAX_PASSAGE = 1500;
-const ZWSP = '​';
+const ZWSP = '\u200b';
 
 let displayNames;
 /** Human name of a language code. Unknown, undetermined or unparsable codes become 'English' and are never echoed back. */
@@ -65,11 +65,24 @@ function userPrompt(passages, question) {
 }
 
 const END_MARKS = new Set(['.', '!', '?', '।', '۔', '؟']); // । danda, ۔ Urdu full stop, ؟ Arabic question mark
-const ABBREVIATIONS = new Set(['mr', 'mrs', 'ms', 'dr', 'st', 'jr', 'sr', 'prof', 'vs', 'etc', 'mt', 'ft', 'no']);
+const ABBREVIATIONS = new Set([
+  'mr', 'mrs', 'ms', 'dr', 'st', 'jr', 'sr', 'prof', 'vs', 'etc', 'mt', 'ft', 'no',
+  'jan', 'feb', 'mar', 'apr', 'jun', 'jul', 'aug', 'sep', 'sept', 'oct', 'nov', 'dec',
+  'rev', 'capt', 'col', 'gen', 'lt', 'sgt', 'ave', 'rd', 'blvd', 'hon', 'gov', 'sen', 'rep',
+  'co', 'inc', 'ltd', 'cf', 'approx', 'dept', 'est',
+]);
 const MAX_ABBREVIATION = 4;
 const isWhitespace = (c) => /\s/.test(c);
 const isLetter = (c) => /\p{L}/u.test(c);
 const isDigit = (c) => c >= '0' && c <= '9';
+const LOWER_OR_DIGIT = /[\p{Ll}\p{Nd}]/u;
+
+/** True when the first non-space character after `pos` is a lowercase letter or a digit ("Oct. 1950", "Ave. but ..."). */
+function continuesLowerOrDigit(text, pos) {
+  let q = pos;
+  while (q < text.length && isWhitespace(text[q])) q++;
+  return q < text.length && LOWER_OR_DIGIT.test(String.fromCodePoint(text.codePointAt(q)));
+}
 
 /** True when the '.' at `dot` closes an abbreviation ("St.", "Dr."), an initial ("J.", "b.") rather than a sentence. */
 function closesAbbreviation(text, dot) {
@@ -100,7 +113,9 @@ function skipCitations(text, pos) {
 /**
  * Splits text into sentences in one linear pass. A sentence ends at a newline, at a danda, or at one of . ! ? ۔ ؟ that is
  * followed by whitespace or the end of the text. A '.' glued to the next character ("3.5") never ends a sentence, and
- * neither does one that closes an abbreviation or an initial ("St. Mary", "Mr. Singh", "(b. 1940)"). Citations that
+ * neither does one followed by a lowercase letter or a digit ("Oct. 1950", "Ave. but not for long": splitting there would
+ * leave a fragment that lost its negation), nor one that closes an abbreviation or an initial ("St. Mary", "(b. 1940)").
+ * The lowercase/digit rule is for '.' only; caseless scripts still split at their own marks. Citations that
  * trail the end mark ("... 1962. [S1]") stay with their sentence. Pieces are returned untrimmed.
  */
 function splitSentences(text) {
@@ -117,7 +132,8 @@ function splitSentences(text) {
     } else if (END_MARKS.has(c)) {
       const next = text[i + 1];
       const boundary = c === '।' || next === undefined || isWhitespace(next);
-      if (boundary && !(c === '.' && next !== undefined && closesAbbreviation(text, i))) {
+      const glued = c === '.' && next !== undefined && (closesAbbreviation(text, i) || continuesLowerOrDigit(text, i + 1));
+      if (boundary && !glued) {
         let j = i + 1;
         while (j < n && END_MARKS.has(text[j])) j++;
         end = skipCitations(text, j);
@@ -168,6 +184,7 @@ function validateAnswer(raw, nSources) {
   let dropped = 0;
   for (const piece of splitSentences(normaliseCitations(text))) {
     const sentence = piece.trim();
+    if (/^\d+[.)]$/.test(sentence)) continue; // a numbered-list marker ("1.", "2)") is not content
     if (!/[\p{L}\p{N}]/u.test(sentence.replace(CITE, ''))) continue; // a stray citation or punctuation
     const valid = [...sentence.matchAll(CITE)].map((c) => +c[1]).filter((n) => n >= 1 && n <= nSources);
     if (!valid.length) { dropped++; continue; }

@@ -55,6 +55,43 @@ test('validateAnswer does not split sentences on abbreviations, initials or numb
   assert.deepEqual([r3.answer, r3.dropped], ['Nobody knew why [S1].', 1]);
 });
 
+test('validateAnswer never splits a sentence before a lowercase letter or digit, so negations survive', () => {
+  const same = (t) => {
+    const r = validateAnswer(t, 1);
+    assert.deepEqual([r.answer, r.dropped], [t, 0], t);
+  };
+  same('She did not live in Pittsburgh in Oct. 1950 [S1].');
+  same('Rose was born in Dec. 1940, not in 1941 [S1].');
+  same('It was not the Rev. Dr. Singh [S1].');
+  same('Rose lived at 5 Elm Ave. but not for long [S1].');
+  same('She liked fruit, e.g. apples, but not pears [S1].');
+
+  // Abbreviation followed by a capital: the abbreviation list keeps it whole. This is the safe (merge) direction:
+  // a missed split can only keep text that was cited, never keep a fragment that lost its negation.
+  const r = validateAnswer('Rose did not live on Elm St. She lived on Oak [S1].', 1);
+  assert.deepEqual([r.answer, r.dropped], ['Rose did not live on Elm St. She lived on Oak [S1].', 0]);
+
+  // a real boundary before a capital still splits, and the uncited lead-in is still dropped
+  const r2 = validateAnswer('I think so. Rose was born in 1940 [S1].', 1);
+  assert.deepEqual([r2.answer, r2.dropped], ['Rose was born in 1940 [S1].', 1]);
+
+  // the rule is for '.' only: other marks still split before lowercase text
+  const r3 = validateAnswer('Really? yes it was true [S1].', 1);
+  assert.deepEqual([r3.answer, r3.dropped], ['yes it was true [S1].', 1]);
+  const r4 = validateAnswer('ਉਹ ਪਿੰਡ ਵਿੱਚ ਰਹਿੰਦੇ ਸਨ। ਫਿਰ ਚਲੇ ਗਏ [S1]।', 1);
+  assert.deepEqual([r4.answer, r4.dropped], ['ਫਿਰ ਚਲੇ ਗਏ [S1]।', 1]);
+  // '.' followed by a caseless letter still ends a sentence
+  const r5 = validateAnswer('ਉਹ ਰਹਿੰਦੇ ਸਨ. ਫਿਰ ਚਲੇ ਗਏ [S1].', 1);
+  assert.deepEqual([r5.answer, r5.dropped], ['ਫਿਰ ਚਲੇ ਗਏ [S1].', 1]);
+});
+
+test('validateAnswer does not count numbered-list markers as content or as dropped', () => {
+  const r = validateAnswer('1. Foo [S1].\n2. Bar [S2].', 2);
+  assert.deepEqual([r.answer, r.dropped, r.citedLabels], ['Foo [S1]. Bar [S2].', 0, [1, 2]]);
+  const r2 = validateAnswer('1) Foo [S1].\n2) Bar [S1].', 1);
+  assert.equal(r2.dropped, 0);
+});
+
 test('validateAnswer normalises grouped and zero-padded citations but not bare numbers', () => {
   assert.equal(validateAnswer('Rose and William wed [S1, S2].', 2).answer, 'Rose and William wed [S1][S2].');
   assert.equal(validateAnswer('Rose and William wed [S1,S2].', 2).answer, 'Rose and William wed [S1][S2].');
