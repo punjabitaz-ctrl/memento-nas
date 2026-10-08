@@ -4,6 +4,7 @@ const path = require('node:path');
 const { load, ConfigError } = require('./src/config');
 const dbmod = require('./src/db');
 const { createApp } = require('./src/app');
+const { createAi } = require('./src/ai');
 
 function die(title, lines) {
   console.error(`\n❌ ${title}\n`);
@@ -39,10 +40,12 @@ const clientDist =
     fs.existsSync(path.join(p, 'index.html'))
   );
 
-const app = createApp({ config, db, clientDist });
+const ai = createAi({ db, config });
+const app = createApp({ config, db, clientDist, registry: ai ? ai.registry : null });
 const server = app.listen(config.port, '0.0.0.0', () => {
   console.log(`🕰️  Memento ${config.version} listening on :${config.port}`);
   console.log(`   data: ${config.dirs.data}  |  AI: ${config.anthropicKey ? 'Claude (opt-in per item)' : 'offline'}  |  proxy: ${config.trustProxy}`);
+  console.log(`   local AI: ${ai ? ai.registry.nodes.map((n) => `${n.name}${n.local ? ' (local)' : ''}`).join(', ') : 'off'}`);
   if (!clientDist) console.warn('   ⚠️  client/dist not found: only the API is available');
 });
 server.requestTimeout = 0; // large uploads over slow NAS links can take a long time
@@ -58,8 +61,9 @@ function shutdown(sig) {
     process.exit(1);
   }, 25_000);
   force.unref();
-  server.close(() => {
+  server.close(async () => {
     try {
+      if (ai) await ai.stop(); // let the job in flight finish before the database closes
       app.locals.close();
       db.pragma('wal_checkpoint(TRUNCATE)');
       db.close();

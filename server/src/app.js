@@ -7,7 +7,7 @@ const session = require('express-session');
 const { SqliteStore } = require('./sessionStore');
 const { HttpError } = require('./util');
 
-function createApp({ config, db, clientDist }) {
+function createApp({ config, db, clientDist, registry = null }) {
   const app = express();
   app.disable('x-powered-by');
   if (config.trustProxy) app.set('trust proxy', 1);
@@ -101,12 +101,13 @@ function createApp({ config, db, clientDist }) {
     if (req.user.role === 'viewer') return res.status(403).json({ error: 'Your account is view-only.' });
     next();
   };
-  const deps = { db, config, requireAuth, requireWriter };
+  const deps = { db, config, requireAuth, requireWriter, registry };
 
   app.get('/api/config', (req, res) => {
     res.json({
       version: config.version,
       aiAvailable: !!config.anthropicKey,
+      localAi: config.ai.enabled,
       maxFileMb: config.maxFileMb,
       initialized: db.prepare('SELECT COUNT(*) c FROM users').get().c > 0,
     });
@@ -118,6 +119,7 @@ function createApp({ config, db, clientDist }) {
   app.use('/api', require('./routes/browse')(deps));
   app.use('/api', require('./routes/prompts')(deps));
   app.use('/api', require('./routes/export')(deps));
+  app.use('/api', require('./routes/ai')(deps));
   app.use('/api', (req, res) => res.status(404).json({ error: 'Not found' }));
 
   if (clientDist && fs.existsSync(path.join(clientDist, 'index.html'))) {
