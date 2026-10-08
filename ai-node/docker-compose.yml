@@ -1,0 +1,44 @@
+# Desktop AI node: runs on the machine with the GPU, NOT on the NAS.
+# Exposes OpenAI-compatible endpoints on your private network (Tailscale or LAN only).
+# Nothing here should be reachable from the internet. Do not port-forward these ports.
+#
+#   1. cp .env.example .env   and fill in WHISPER_IMAGE (see README)
+#   2. docker compose up -d
+#   3. Pull the models you chose from ai-eval (see README)
+
+services:
+  ollama:                                   # embeddings + chat
+    image: ollama/ollama
+    container_name: memento-ollama
+    ports:
+      - "${NODE_BIND:-127.0.0.1}:11434:11434"   # set NODE_BIND to your Tailscale IP to serve the NAS
+    volumes:
+      - ollama:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+
+  whisper:                                  # transcription (any OpenAI-compatible /v1/audio/transcriptions server)
+    image: ${WHISPER_IMAGE:?set WHISPER_IMAGE in .env, see README}
+    container_name: memento-whisper
+    ports:
+      - "${NODE_BIND:-127.0.0.1}:8000:8000"
+    volumes:
+      - whisper-models:/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+
+volumes:
+  ollama:
+  whisper-models:
