@@ -24,6 +24,7 @@ services:
     restart: unless-stopped
 
   whisper:                                  # transcription (any OpenAI-compatible /v1/audio/transcriptions server)
+    # Port 8000 and the cache path /root/.cache/huggingface are specific to one server family. Adjust them for the server you choose.
     image: ${WHISPER_IMAGE:?set WHISPER_IMAGE in .env, see README}
     container_name: memento-whisper
     ports:

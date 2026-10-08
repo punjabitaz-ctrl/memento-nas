@@ -70,3 +70,10 @@ Vault = the `/data/vault` folder of `.enc` files · MEM2 = this encrypted file f
 
 ## 7. Known limitations (honest list)
 Metadata unencrypted · no transcription · no thumbnails (large images load full-size; HEIC won't preview) · no comments · no schema migrations · no resumable uploads · no audit log/2FA · only Chromium E2E-tested · arm64 untested · Docker image never built at handover · no performance numbers.
+
+## 8. Desktop AI node (Whisper + Ollama)
+- **Status (2026-10-08):** the kit is written but has not been run end to end. No Whisper image has been chosen, the Docker daemon was not running for the checks below, and no recording has gone through a node.
+- **Compose check (run):** `docker compose config` with `WHISPER_IMAGE` unset fails for the whole file (`required variable WHISPER_IMAGE is missing a value`). Set it before any compose command. The same parse runs for `up -d ollama`; that was not run, because the daemon was off.
+- **Data-retention checks (not yet run):** for BOTH `memento-whisper` and `memento-ollama`, the checks in `ai-node/README.md` step 4 must be done after a test request: volumes, `docker logs`, and each server's settings for uploads, request logging and history. `docker diff` alone is not evidence. Record each result here.
+- **Not verified:** whether the chosen Whisper server stores uploads or logs request bodies; whether Ollama logs prompts or chat text; the current name and tag of the Whisper image.
+- **Operator responsibility:** the Memento server cannot enforce what a node stores or logs. It only checks that node URLs are private and sends private memories only to `local: true` nodes.
