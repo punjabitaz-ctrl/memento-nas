@@ -26,11 +26,19 @@ function queueTranscribe(db, memoryId, { force = false } = {}) {
   return n;
 }
 
-/** Call after a memory or its files were created/changed. Does nothing when local AI is off. */
+/**
+ * Call after a memory or its files were created/changed. Does nothing when local AI is off.
+ * Best-effort: the save is already committed, so a queueing problem must never fail the request.
+ * Only the error message is logged, never user text.
+ */
 function onMemorySaved(db, config, memoryId) {
   if (!config.ai.enabled) return;
-  queueTranscribe(db, memoryId);
-  queueEmbed(db, memoryId);
+  try {
+    queueTranscribe(db, memoryId);
+    queueEmbed(db, memoryId);
+  } catch (e) {
+    console.warn('[ai] could not queue AI work:', e.message);
+  }
 }
 
 module.exports = { memoryText, queueEmbed, queueTranscribe, onMemorySaved };

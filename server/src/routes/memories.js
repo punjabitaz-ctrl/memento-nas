@@ -9,6 +9,7 @@ const { openDecryptStream } = require('../crypto');
 const { organize, organizeWithClaude } = require('../organize');
 const { reindex } = require('../db');
 const { onMemorySaved } = require('../ai/hooks');
+const { recomposeTranscript } = require('../ai/transcribe');
 
 const TYPES = ['photo', 'video', 'voice_note', 'text_note', 'document'];
 const KIND_TO_TYPE = { image: 'photo', video: 'video', audio: 'voice_note', document: 'document' };
@@ -157,7 +158,8 @@ module.exports = function memoryRoutes({ db, config, requireAuth, requireWriter 
     }
     const tags = b.tags !== undefined ? cleanTags(b.tags) : null;
     const people = b.people !== undefined ? cleanPeople(b.people) : null;
-    // Whatever a person typed wins over the machine from now on; clearing the box hands it back.
+    // Whatever a person typed wins over the machine from now on. Clearing the box clears the human marker;
+    // use POST /memories/:id/transcribe (force) to have the machine redo it.
     const tSource = next.transcript === m.transcript ? m.transcript_source : next.transcript ? 'human' : '';
     db.transaction(() => {
       db.prepare(
@@ -219,8 +221,13 @@ module.exports = function memoryRoutes({ db, config, requireAuth, requireWriter 
     if (!canEdit(m, req.user)) throw new HttpError(403, 'You can only change memories you added.');
     const row = db.prepare('SELECT id FROM media WHERE id = ? AND memory_id = ?').get(req.params.mediaId, m.id);
     if (!row) throw new HttpError(404, 'File not found');
-    db.prepare('DELETE FROM media WHERE id = ?').run(row.id);
+    db.transaction(() => {
+      db.prepare('DELETE FROM media WHERE id = ?').run(row.id);
+      // Drop this recording's machine transcript from the memory and search index (human transcripts are left alone).
+      recomposeTranscript(db, m.id);
+    })();
     removeFiles(config, [row.id]);
+    onMemorySaved(db, config, m.id);
     res.json({ ok: true });
   });
 

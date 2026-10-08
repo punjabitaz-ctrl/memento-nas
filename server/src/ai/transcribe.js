@@ -31,11 +31,18 @@ function makeTranscribeHandler({ db, config, registry, client = clientDefault })
     if (media.kind !== 'audio' && media.kind !== 'video') return { skip: 'not audio or video' };
     if (media.transcript_source === 'human') return { skip: 'transcript was written by a person' };
 
-    const result = await registry.withNode('transcribe', media.privacy, async (node) => {
-      // Re-opened per node: a stream can only be consumed once. Decrypted bytes live in memory only.
-      const { stream } = await openDecryptStream(vaultPath(config, media.id), config.key, media.id);
-      return client.transcribe(node, stream, { mime: media.mime });
-    });
+    let result;
+    try {
+      result = await registry.withNode('transcribe', media.privacy, async (node) => {
+        // Re-opened per node: a stream can only be consumed once. Decrypted bytes live in memory only.
+        const { stream } = await openDecryptStream(vaultPath(config, media.id), config.key, media.id);
+        return client.transcribe(node, stream, { mime: media.mime });
+      });
+    } catch (e) {
+      // A missing vault file will never come back: don't retry, and don't store the absolute path in last_error.
+      if (e && e.code === 'ENOENT') return { skip: 'file missing from the vault' };
+      throw e;
+    }
 
     db.transaction(() => {
       db.prepare('UPDATE media SET transcript = ?, transcript_segments = ?, transcript_language = ? WHERE id = ?')

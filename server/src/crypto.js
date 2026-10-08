@@ -181,7 +181,11 @@ async function openDecryptStream(filePath, masterKey, recordId, start = 0, end =
         await fh.close().catch(() => {});
       }
     }
-    return { size: plainSize, stream: Readable.from(gen(), { objectMode: false }) };
+    const stream = Readable.from(gen(), { objectMode: false });
+    // Readable.from() never runs the generator's `finally` if the stream is destroyed before it was iterated,
+    // so release the handle when the stream closes. FileHandle.close() is safe to call twice.
+    stream.once('close', () => { fh.close().catch(() => {}); });
+    return { size: plainSize, stream };
   } catch (e) {
     await fh.close().catch(() => {});
     throw e;

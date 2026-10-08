@@ -123,4 +123,49 @@ test('buffer helpers round trip and detect wrong key', () => {
   assert.throws(() => C.decryptBuffer(crypto.randomBytes(32), 'canary', enc), C.DecryptError);
 });
 
+test('destroying the stream before it is read releases the file handle; full and range reads still work', async () => {
+  const data = crypto.randomBytes(3 * C.CHUNK + 5);
+  const f = path.join(tmp, 'early.enc');
+  await encryptTo(f, data);
+
+  // closing a FileHandle is asynchronous: wait (bounded) for the descriptor to be released
+  const released = async (fh) => {
+    for (let i = 0; i < 200 && fh.fd !== -1; i++) await new Promise((r) => setTimeout(r, 5));
+    return fh.fd === -1;
+  };
+  const realOpen = fs.promises.open;
+  const handles = [];
+  fs.promises.open = async (...args) => {
+    const fh = await realOpen.apply(fs.promises, args);
+    const rec = { fh, closes: 0 };
+    const realClose = fh.close.bind(fh);
+    fh.close = (...a) => { rec.closes++; return realClose(...a); };
+    handles.push(rec);
+    return fh;
+  };
+  try {
+    // destroyed before any read: the generator never starts
+    const early = await C.openDecryptStream(f, KEY, 'rec1');
+    assert.equal(handles.length, 1);
+    assert.notEqual(handles[0].fh.fd, -1, 'handle is open before destroy');
+    await new Promise((resolve) => { early.stream.once('close', resolve); early.stream.destroy(); });
+    assert.ok(await released(handles[0].fh), 'handle was released');
+    assert.ok(handles[0].closes >= 1, 'close() was called');
+
+    // destroyed mid-read
+    const mid = await C.openDecryptStream(f, KEY, 'rec1');
+    for await (const _chunk of mid.stream) { mid.stream.destroy(); break; }
+    assert.ok(await released(handles[1].fh), 'mid-read destroy releases the handle');
+
+    // normal full read and range read still pass, and close their handle
+    const full = await C.openDecryptStream(f, KEY, 'rec1');
+    assert.ok((await readAll(full.stream)).equals(data));
+    const range = await C.openDecryptStream(f, KEY, 'rec1', C.CHUNK - 10, C.CHUNK + 10);
+    assert.ok((await readAll(range.stream)).equals(data.subarray(C.CHUNK - 10, C.CHUNK + 11)));
+    assert.ok(await released(handles[2].fh) && await released(handles[3].fh), 'completed reads release their handles');
+  } finally {
+    fs.promises.open = realOpen;
+  }
+});
+
 test.after(() => fs.rmSync(tmp, { recursive: true, force: true }));

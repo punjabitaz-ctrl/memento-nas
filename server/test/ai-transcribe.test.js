@@ -30,7 +30,7 @@ test('transcribes a family recording, indexes the text and queues embedding; aud
   await fake.close(); w.close();
 });
 
-test('multiple recordings are joined in upload order; languages are de-duplicated', async () => {
+test('multiple recordings are joined in upload order (by rowid); languages are de-duplicated', async () => {
   let n = 0;
   const texts = [['first part', 'pa'], ['second part', 'en'], ['third part', 'pa']];
   const fake = await startFakeNode({ transcribe: () => { const [text, language] = texts[n++]; return { text, language, segments: [] }; } });
@@ -39,10 +39,7 @@ test('multiple recordings are joined in upload order; languages are de-duplicate
   const m = addMemory(w.db, { by: u, type: 'voice_note' });
   const files = [addMedia(w, { memoryId: m }), addMedia(w, { memoryId: m }), addMedia(w, { memoryId: m })];
   const handler = makeTranscribeHandler(w);
-  for (const f of files) {
-    await handler(job(m, f.id));
-    await new Promise((r) => setTimeout(r, 3)); // distinct created_at ordering is by rowid anyway
-  }
+  for (const f of files) await handler(job(m, f.id));
   const row = mem(w.db, m);
   assert.equal(row.transcript, 'first part\n\nsecond part\n\nthird part');
   assert.equal(row.transcript_languages, '["pa","en"]');
@@ -125,4 +122,16 @@ test('hydrate exposes transcript source, languages and job status', () => {
   w.db.prepare("UPDATE memories SET transcript='hi', transcript_source='machine', transcript_languages='[\"en\"]' WHERE id=?").run(m);
   assert.deepEqual([row().transcriptSource, row().transcriptLanguages, row().transcriptJob], ['machine', ['en'], null]);
   w.close();
+});
+
+test('a recording whose vault file is missing is skipped, not retried, and the path is not leaked', async () => {
+  const fake = await startFakeNode();
+  const w = makeWorld({ nodes: [nodeCfg(fake)] });
+  const u = addUser(w.db);
+  const m = addMemory(w.db, { by: u, type: 'voice_note' });
+  const f = addMedia(w, { memoryId: m });
+  fs.unlinkSync(require('../src/uploads').vaultPath(w.config, f.id));
+  assert.deepEqual(await makeTranscribeHandler(w)(job(m, f.id)), { skip: 'file missing from the vault' });
+  assert.equal(fake.calls.length, 0);
+  await fake.close(); w.close();
 });
