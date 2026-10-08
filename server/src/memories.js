@@ -34,6 +34,15 @@ function hydrate(db, rows) {
       });
     }
   }
+  const jobState = new Map();
+  for (const chunk of inChunks(ids)) {
+    const q = chunk.map(() => '?').join(',');
+    for (const j of db.prepare(
+      `SELECT memory_id, status FROM ai_jobs WHERE kind = 'transcribe' AND status IN ('pending','running','failed') AND memory_id IN (${q})`
+    ).all(...chunk)) {
+      if (j.status !== 'failed' || !jobState.has(j.memory_id)) jobState.set(j.memory_id, j.status === 'failed' ? 'failed' : 'pending');
+    }
+  }
   const users = new Map(db.prepare('SELECT id, display_name FROM users').all().map((u) => [u.id, u.display_name]));
   return rows.map((m) => ({
     id: m.id,
@@ -42,6 +51,9 @@ function hydrate(db, rows) {
     description: m.description,
     content: m.content,
     transcript: m.transcript,
+    transcriptSource: m.transcript_source,
+    transcriptLanguages: JSON.parse(m.transcript_languages || '[]'),
+    transcriptJob: m.transcript ? null : jobState.get(m.id) || null,
     memoryDate: m.memory_date,
     datePrecision: m.date_precision,
     location: m.location,

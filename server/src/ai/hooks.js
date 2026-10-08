@@ -1,0 +1,36 @@
+'use strict';
+const crypto = require('node:crypto');
+const { enqueue } = require('./jobs');
+
+/** Everything a memory contributes to search and retrieval, as one string. */
+function memoryText(m) {
+  return [m.title, m.description, m.content, m.transcript].filter((s) => s && s.trim()).join('\n\n');
+}
+
+/** Queue (re-)embedding unless one is already waiting or there is nothing to embed. */
+function queueEmbed(db, memoryId) {
+  const m = db.prepare('SELECT title, description, content, transcript FROM memories WHERE id = ?').get(memoryId);
+  if (!m || !memoryText(m).trim()) return false;
+  if (db.prepare("SELECT 1 FROM ai_jobs WHERE kind = 'embed' AND memory_id = ? AND status = 'pending'").get(memoryId)) return false;
+  return enqueue(db, { kind: 'embed', memoryId, key: `embed:${memoryId}:${crypto.randomUUID()}` });
+}
+
+/** Queue transcription for each audio/video file. `force` makes a fresh job even if one already ran. */
+function queueTranscribe(db, memoryId, { force = false } = {}) {
+  const files = db.prepare("SELECT id FROM media WHERE memory_id = ? AND kind IN ('audio','video')").all(memoryId);
+  let n = 0;
+  for (const f of files) {
+    const key = force ? `transcribe:${f.id}:${crypto.randomUUID()}` : `transcribe:${f.id}`;
+    if (enqueue(db, { kind: 'transcribe', memoryId, mediaId: f.id, key })) n++;
+  }
+  return n;
+}
+
+/** Call after a memory or its files were created/changed. Does nothing when local AI is off. */
+function onMemorySaved(db, config, memoryId) {
+  if (!config.ai.enabled) return;
+  queueTranscribe(db, memoryId);
+  queueEmbed(db, memoryId);
+}
+
+module.exports = { memoryText, queueEmbed, queueTranscribe, onMemorySaved };

@@ -8,6 +8,7 @@ const { parseUpload, removeFiles, vaultPath } = require('../uploads');
 const { openDecryptStream } = require('../crypto');
 const { organize, organizeWithClaude } = require('../organize');
 const { reindex } = require('../db');
+const { onMemorySaved } = require('../ai/hooks');
 
 const TYPES = ['photo', 'video', 'voice_note', 'text_note', 'document'];
 const KIND_TO_TYPE = { image: 'photo', video: 'video', audio: 'voice_note', document: 'document' };
@@ -112,14 +113,15 @@ module.exports = function memoryRoutes({ db, config, requireAuth, requireWriter 
       db.transaction(() => {
         db.prepare(
           `INSERT INTO memories (id, created_by, type, title, description, content, transcript, memory_date, date_precision,
-             location, privacy, prompt_id, ai_summary, ai_source, created_at, updated_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+             location, privacy, prompt_id, ai_summary, ai_source, transcript_source, created_at, updated_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
         ).run(id, req.user.id, type, title, description, content, transcript, date ? date.date : null, date ? date.precision : 'day',
-          location || sug.location || '', privacy, promptId, sug.summary || '', source, now, now);
+          location || sug.location || '', privacy, promptId, sug.summary || '', source, transcript ? 'human' : '', now, now);
         const im = db.prepare('INSERT INTO media (id, memory_id, kind, mime, original_name, size_plain, duration, created_at) VALUES (?,?,?,?,?,?,?,?)');
         for (const x of files) im.run(x.id, id, x.kind, x.mime, x.filename, x.sizePlain, x.kind === 'audio' || x.kind === 'video' ? duration : null, now);
         setTagsPeople(db, id, tags, people);
       })();
+      onMemorySaved(db, config, id);
       res.status(201).json({ memory: hydrate(db, [getMemory(id)])[0] });
     } catch (e) {
       cleanup();
@@ -155,16 +157,19 @@ module.exports = function memoryRoutes({ db, config, requireAuth, requireWriter 
     }
     const tags = b.tags !== undefined ? cleanTags(b.tags) : null;
     const people = b.people !== undefined ? cleanPeople(b.people) : null;
+    // Whatever a person typed wins over the machine from now on; clearing the box hands it back.
+    const tSource = next.transcript === m.transcript ? m.transcript_source : next.transcript ? 'human' : '';
     db.transaction(() => {
       db.prepare(
-        'UPDATE memories SET title=?, description=?, content=?, transcript=?, location=?, privacy=?, memory_date=?, date_precision=?, updated_at=? WHERE id=?'
-      ).run(next.title, next.description, next.content, next.transcript, next.location, next.privacy, next.memory_date, next.date_precision, new Date().toISOString(), m.id);
+        'UPDATE memories SET title=?, description=?, content=?, transcript=?, transcript_source=?, location=?, privacy=?, memory_date=?, date_precision=?, updated_at=? WHERE id=?'
+      ).run(next.title, next.description, next.content, next.transcript, tSource, next.location, next.privacy, next.memory_date, next.date_precision, new Date().toISOString(), m.id);
       if (tags || people) {
         const curTags = tags || db.prepare('SELECT tag FROM memory_tags WHERE memory_id=?').all(m.id).map((x) => x.tag);
         const curPeople = people || db.prepare('SELECT name, relationship FROM memory_people WHERE memory_id=?').all(m.id);
         setTagsPeople(db, m.id, curTags, curPeople);
       } else reindex(db, m.id);
     })();
+    onMemorySaved(db, config, m.id);
     res.json({ memory: hydrate(db, [getMemory(m.id)])[0] });
   }));
 
@@ -205,6 +210,7 @@ module.exports = function memoryRoutes({ db, config, requireAuth, requireWriter 
       removeFiles(config, files.map((x) => x.id));
       throw e;
     }
+    onMemorySaved(db, config, m.id);
     res.status(201).json({ memory: hydrate(db, [getMemory(m.id)])[0] });
   }));
 
