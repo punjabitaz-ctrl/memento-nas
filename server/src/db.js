@@ -3,6 +3,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const Database = require('better-sqlite3');
 const { encryptBuffer, decryptBuffer, DecryptError } = require('./crypto');
+const { migrate } = require('./migrations');
 
 const CANARY_ID = 'memento-key-check';
 const CANARY_TEXT = 'memento-vault-key-ok';
@@ -100,6 +101,7 @@ function open(config) {
   db.pragma('busy_timeout = 5000');
   db.exec(SCHEMA);
   verifyKey(db, config.key);
+  migrate(db);
   seedPrompts(db);
   return db;
 }
@@ -164,4 +166,4 @@ function reindex(db, memoryId) {
   );
 }
 
-module.exports = { open, reindex };
+module.exports = { open, reindex, SCHEMA };
