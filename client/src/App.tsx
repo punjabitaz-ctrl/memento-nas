@@ -6,6 +6,7 @@ import Layout from './components/Layout';
 import { Login, Setup } from './pages/Auth';
 import { AddPage, RecordPage } from './pages/Create';
 import PromptsPage from './pages/Prompts';
+import AskPage from './pages/Ask';
 import { Dashboard, People, Person, Search, Stories, Timeline } from './pages/Browse';
 import MemoryDetail from './pages/MemoryDetail';
 import { Family, Help, Settings } from './pages/Manage';
@@ -42,6 +43,7 @@ export default function App() {
                 <Route path="/record" element={<RecordPage />} />
                 <Route path="/add" element={<AddPage />} />
                 <Route path="/prompts" element={<PromptsPage />} />
+                <Route path="/ask" element={<AskPage />} />
                 <Route path="/stories" element={<Stories />} />
                 <Route path="/timeline" element={<Timeline />} />
                 <Route path="/search" element={<Search />} />

@@ -52,6 +52,9 @@ export interface Memory {
   description: string;
   content: string;
   transcript: string;
+  transcriptSource: '' | 'machine' | 'human';
+  transcriptLanguages: string[];
+  transcriptJob: 'pending' | 'failed' | null;
   memoryDate: string | null;
   datePrecision: DatePrecision;
   location: string;
@@ -115,6 +118,7 @@ export interface Stats {
 export interface AppConfig {
   version: string;
   aiAvailable: boolean;
+  localAi: boolean;
   maxFileMb: number;
   initialized: boolean;
 }
@@ -124,4 +128,22 @@ export interface Decade {
   label: string;
   count: number;
   status: 'empty' | 'sparse' | 'ok';
+}
+
+export interface AskCitation {
+  label: string;
+  memoryId: string;
+  title: string;
+  memoryDate: string | null;
+  datePrecision: DatePrecision;
+}
+
+export interface AskResult {
+  id: string;
+  outcome: 'answered' | 'no_record';
+  answer: string;
+  citations: AskCitation[];
+  degraded: boolean;
+  excludedPrivate: number;
+  mode: 'hybrid' | 'keyword';
 }

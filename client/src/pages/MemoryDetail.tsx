@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api';
 import { useAuth } from '../auth/AuthContext';
@@ -17,6 +17,13 @@ export default function MemoryDetail() {
   const [confirm, setConfirm] = useState<null | 'delete' | { media: string; name: string }>(null);
   const [busy, setBusy] = useState(false);
   const fileIn = useRef<HTMLInputElement>(null);
+  const job = data?.memory.transcriptJob;
+  useEffect(() => {
+    if (job !== 'pending') return;
+    // Poll quietly while the AI helper works (no spinner, so the page and any edits stay put).
+    const t = setInterval(() => { api.memory(id).then(setData).catch(() => {}); }, 5000);
+    return () => clearInterval(t);
+  }, [job, id, setData]);
 
   if (loading) return <Spinner />;
   if (error || !data) return <Banner kind="error" title="Can’t open this memory">{error || 'It may have been removed, or it’s private to someone else.'} <Link to="/stories">Back to all stories</Link></Banner>;
@@ -27,6 +34,11 @@ export default function MemoryDetail() {
     setBusy(true);
     try { const r = await fn(); if (ok) toast(ok); return r; } catch (e) { toast((e as Error).message, true); } finally { setBusy(false); }
   }
+  const transcribe = () => run(async () => {
+    const r = await api.transcribe(m.id);
+    toast(r.alreadyQueued ? 'Already in the queue' : 'Transcribing…');
+    set((await api.memory(m.id)).memory);
+  });
   const organize = (useAI: boolean) => run(async () => set((await api.organize(m.id, useAI)).memory), useAI ? 'Organized with Claude' : 'Organized');
   const remove = () => run(async () => { await api.deleteMemory(m.id); toast('Memory deleted'); nav('/stories'); });
   const removeFile = (mediaId: string) => run(async () => { await api.deleteMedia(m.id, mediaId); set((await api.memory(m.id)).memory); setConfirm(null); }, 'File removed');
@@ -70,9 +82,28 @@ export default function MemoryDetail() {
             ))}
             {m.description && <p style={{ fontSize: 'var(--text-lg)' }}>{m.description}</p>}
             {m.content && <div className="detail-story">{m.content}</div>}
-            {m.transcript && <section><h4>Transcript</h4><div className="detail-story" style={{ fontSize: 'var(--text-base)' }}>{m.transcript}</div></section>}
-            {!m.transcript && m.media.some((f) => f.kind === 'audio') && canEdit && (
-              <Banner kind="info" title="Make this story searchable">Memento keeps everything on your NAS, so it doesn’t transcribe audio by itself. Press Edit and type or paste what was said, and every word becomes searchable.</Banner>
+            {m.transcript && (
+              <section>
+                <h4>Transcript{m.transcriptLanguages.length ? <span className="muted small"> · {m.transcriptLanguages.join(', ')}</span> : null}</h4>
+                {m.transcriptSource === 'machine' && (
+                  <Banner kind="info" title="Written by the computer">Names, places and mixed-language passages are often wrong. {canEdit ? 'Press Edit to correct it; your version is kept.' : 'Ask the person who shared it to check it.'}</Banner>
+                )}
+                <div className="detail-story" style={{ fontSize: 'var(--text-base)' }}>{m.transcript}</div>
+              </section>
+            )}
+            {!m.transcript && m.media.some((f) => f.kind === 'audio' || f.kind === 'video') && canEdit && (
+              config?.localAi ? (
+                m.transcriptJob === 'pending' ? (
+                  <Banner kind="info" title="Transcript on its way">Your computer is writing this out. It will appear here and become searchable.</Banner>
+                ) : (
+                  <Banner kind={m.transcriptJob === 'failed' ? 'warn' : 'info'} title={m.transcriptJob === 'failed' ? 'The transcript did not work' : 'Make this story searchable'}>
+                    <button className="btn btn-outline btn-small" disabled={busy} onClick={() => transcribe()}>Transcribe now</button>
+                    {' '}or press Edit to type what was said.
+                  </Banner>
+                )
+              ) : (
+                <Banner kind="info" title="Make this story searchable">Memento keeps everything on your NAS, so it doesn’t transcribe audio by itself. Press Edit and type or paste what was said, and every word becomes searchable.</Banner>
+              )
             )}
           </div>
 

@@ -18,8 +18,9 @@ const DASH: Item = { to: '/dashboard', label: 'Dashboard', icon: '📊' };
 const FAMILY: Item = { to: '/family', label: 'Family', icon: '👨‍👩‍👧‍👦' };
 const SETTINGS: Item = { to: '/settings', label: 'Settings', icon: '⚙️' };
 const HELP: Item = { to: '/help', label: 'Help & backup', icon: '❓' };
+const ASK: Item = { to: '/ask', label: 'Ask the archive', icon: '💬' };
 
-function sections(persona: Persona, canWrite: boolean): { title: string; items: Item[] }[] {
+function sections(persona: Persona, canWrite: boolean, localAi: boolean): { title: string; items: Item[] }[] {
   const create = canWrite ? [RECORD, ADD, WRITE, PROMPTS] : [PROMPTS];
   if (persona === 'elder') {
     return [
@@ -29,7 +30,7 @@ function sections(persona: Persona, canWrite: boolean): { title: string; items: 
   }
   if (persona === 'explorer') {
     return [
-      { title: 'Explore', items: [TIMELINE, SEARCH, PEOPLE, STORIES] },
+      { title: 'Explore', items: localAi ? [ASK, TIMELINE, SEARCH, PEOPLE, STORIES] : [TIMELINE, SEARCH, PEOPLE, STORIES] },
       { title: 'Contribute', items: canWrite ? [RECORD, ADD, PROMPTS] : [PROMPTS] },
       { title: 'Tools', items: [DASH, SETTINGS, HELP] },
     ];
@@ -37,25 +38,25 @@ function sections(persona: Persona, canWrite: boolean): { title: string; items: 
   return [
     { title: 'Manage', items: [DASH, FAMILY, STORIES, PEOPLE] },
     { title: 'Create', items: create },
-    { title: 'Explore', items: [TIMELINE, SEARCH] },
+    { title: 'Explore', items: localAi ? [ASK, TIMELINE, SEARCH] : [TIMELINE, SEARCH] },
     { title: 'Tools', items: [SETTINGS, HELP] },
   ];
 }
 
 const TITLES: Record<string, string> = {
-  record: 'Record a story', add: 'Add to the vault', prompts: 'Story prompts', stories: 'Stories', timeline: 'Timeline',
+  ask: 'Ask the archive', record: 'Record a story', add: 'Add to the vault', prompts: 'Story prompts', stories: 'Stories', timeline: 'Timeline',
   search: 'Search', people: 'People', person: 'People', dashboard: 'Dashboard', family: 'Family', settings: 'Settings', help: 'Help & backup', memory: 'Memory',
 };
 
 export default function Layout() {
-  const { user, logout } = useAuth();
+  const { user, config, logout } = useAuth();
   const nav = useNavigate();
   const loc = useLocation();
   const [open, setOpen] = useState(false);
   useEffect(() => setOpen(false), [loc.pathname, loc.search]);
   if (!user) return null;
   const canWrite = user.role !== 'viewer';
-  const secs = sections(user.persona, canWrite);
+  const secs = sections(user.persona, canWrite, !!config?.localAi);
   const roleLabel = user.role === 'owner' ? 'Vault owner' : user.role === 'contributor' ? 'Contributor' : 'View only';
   const title = TITLES[loc.pathname.split('/')[1]] || 'Memento';
 

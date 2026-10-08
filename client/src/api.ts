@@ -1,5 +1,5 @@
 import type {
-  AppConfig, Category, Decade, LightMemory, Member, Memory, Prompt, Stats, User,
+  AppConfig, AskResult, Category, Decade, LightMemory, Member, Memory, Prompt, Stats, User,
 } from './types';
 
 export class ApiError extends Error {
@@ -126,4 +126,9 @@ export const api = {
   addPrompt: (b: { text: string; category: string }) => post<{ prompt: Prompt }>('/api/prompts', b),
   votePrompt: (id: string) => post<{ prompt: Prompt }>(`/api/prompts/${id}/vote`),
   deletePrompt: (id: string) => del<{ ok: boolean }>(`/api/prompts/${id}`),
+
+  ask: (question: string, lang: string) => post<AskResult>('/api/ask', { question, lang }),
+  reportAnswer: (id: string) => post<{ ok: boolean }>(`/api/ask/${id}/report`),
+  forwardQuestion: (id: string) => post<{ prompt: { id: string; text: string } }>(`/api/ask/${id}/forward`),
+  transcribe: (id: string, overwrite = false) => post<{ queued: number; alreadyQueued?: boolean }>(`/api/memories/${id}/transcribe`, { overwrite }),
 };
