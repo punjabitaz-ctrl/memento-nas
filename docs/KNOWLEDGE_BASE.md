@@ -2,7 +2,7 @@
 
 ## 1. Provenance
 - The NAS repo (`punjabitaz-ctrl/memento-nas`) originally held only a deployment scaffold (Dockerfile, compose, README, SECURITY) describing a v2.0 whose source was never committed.
-- An earlier local MVP (`F:\ClaudeCode\memento-mvp`, identical zip) held the UI, personas, prompt library and timeline ideas, but not the v2.0 server.
+- An earlier local MVP (an identical zip, not in this repo) held the UI, personas, prompt library and timeline ideas, but not the v2.0 server.
 - This codebase **rebuilds v2.0 to the scaffold's contract** and ports the MVP's UX, persona model, stylesheet and 149 prompts (deduplicated). Old README/SECURITY claims (single IV, one account, connect-sqlite3, "temp file") were obsolete and replaced.
 - `memento-build-brief.md` (earlier handoff) is superseded by `docs/`.
 
@@ -82,6 +82,13 @@ Vault = the `/data/vault` folder of `.enc` files · MEM2 = this encrypted file f
 Metadata unencrypted · transcription and Ask need a node you run yourself · no thumbnails (large images load full-size; HEIC won't preview) · no comments · no resumable uploads · no audit log/2FA · only Chromium E2E-tested · arm64 untested · Docker image never built at handover · no performance numbers.
 
 Local AI limitations: Whisper-class detection is per file, so mixed-language recordings are transcribed with partial accuracy; Punjabi, Tamil and code-switching are expected weak spots and must be measured · no speaker diarization · answers can still misread a source · the AI path has been tested against a fake node only, until `ai-eval` and a real-node run are done · the question text is sent to the embedding node, which may be a remote one · node URLs are checked by name, not DNS · plain-HTTP nodes are allowed · the brute-force vector scan has not been timed on the NAS · no NAS-local node container is shipped.
+
+### Known gaps (local AI)
+- Shutdown during a long transcription hits the 25 s forced exit (`server/index.js`): the job is put back to `pending` at the next boot, but the interrupted run already used one attempt.
+- `ai_jobs` rows are never pruned, so the table only grows (done, failed and skipped jobs stay).
+- A memory that was `private` when first queued and later becomes `family` is not transcribed automatically. Use the Transcribe button, or the owner's backfill, which uses a key based on a fingerprint of the node set, so it retries a skipped recording at most once per node configuration (the button always works).
+- The vector scan is brute force and synchronous (`server/src/ai/retrieve.js`). It has not been timed on the NAS; measure before relying on it at scale.
+- Chunk size uses a Latin-biased estimate of 3 characters per token. Measure with real Indic-script text before trusting the chunk sizes.
 
 ## 8. Desktop AI node (Whisper + Ollama)
 - **Status (2026-10-08):** the kit is written but has not been run end to end. No Whisper image has been chosen, the Docker daemon was not running for the checks below, and no recording has gone through a node.

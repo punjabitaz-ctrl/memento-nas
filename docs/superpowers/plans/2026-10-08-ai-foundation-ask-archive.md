@@ -3998,8 +3998,8 @@ Expected: server tests all pass (91), client build succeeds, `✔ AI e2e passed`
 
 - [ ] **Step 11: Scan for personal details before pushing (the repo is public)**
 
-Run: `git grep -niE "job[ ]search|reloca[t]|Atlas[R]ex|[@]gmail|AYi[N]|AOOSTA[R]" -- . ':!package-lock.json'`
-Expected: no output (the pattern is written so this line does not match itself; the one known false positive is a prompt in `server/src/data/prompts.json` (line 623)). Fix any other hit before continuing.
+Run the personal-details scan with your own patterns kept in an untracked file (never in the repo): `git grep -niE -f .git/info/scan-patterns -- . ':!package-lock.json'`
+Expected: no output (the one known false positive is a prompt in `server/src/data/prompts.json` (line 623)). Fix any other hit before continuing.
 
 - [ ] **Step 12: Commit, push, open the pull request**
 

@@ -38,7 +38,7 @@ Roles (separate from persona): **owner** (all + family management), **contributo
 **F6 Operate**
 - `/health`, graceful shutdown, key-mismatch refusal, config validation, `reset-password.js`, structured error messages for the NAS admin.
 **F7 Transcription** (local, privacy-preserving): implemented against OpenAI-compatible local nodes (job queue with retries, per-file transcripts, a person's edits are never overwritten, per-file language detection). Off unless `AI_ENABLED=true`. Accuracy per language is **not yet measured**; run `server/ai-eval`.
-**F11 Ask the archive** (grounded, cited Q&A over the family's stories, persona-aware, forwards unanswered questions to elders as prompts): implemented against local nodes; every answer sentence must cite a memory the asker may see, and private memories never reach a remote node. Quality depends on the chosen models and has **not yet been measured**; tested against a fake node only.
+**F11 Ask the archive** (grounded, cited Q&A over the family's stories, persona-aware, forwards unanswered questions to the family as prompts; `addressed_to` records the elders but is not yet used for filtering): implemented against local nodes; every answer sentence must cite a memory the asker may see, and private memories never reach a remote node. Quality depends on the chosen models and has **not yet been measured**; tested against a fake node only.
 ☐ **F8 Comments & reactions**: not built.
 ☐ **F9 Thumbnails / HEIC preview**: not built.
 ☐ **F10 Key rotation tool**: not built.

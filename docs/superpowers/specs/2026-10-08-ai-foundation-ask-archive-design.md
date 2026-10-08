@@ -12,7 +12,7 @@ This slice adds local AI so that voice stories become searchable text, and a des
 
 | Decision | Choice |
 |---|---|
-| Where AI runs | **Hybrid**: desktop GPU node (RTX 5070 12 GB, over Tailscale) as primary; NAS (N150, CPU) as fallback for small jobs |
+| Where AI runs | **Hybrid**: desktop GPU node (over Tailscale) as primary; NAS (N150, CPU) as fallback for small jobs |
 | First slice | AI foundation + Ask the archive |
 | Trust boundary | Family memories may go to the node; **private memories never leave the NAS** |
 | Languages | English, Punjabi, Urdu/Hindi, Spanish, French, Portuguese, Tamil, Romanian; frequent mixed-language recordings |
@@ -120,7 +120,8 @@ Elder interviewer (adaptive follow-up questions) · persona capability coaching 
 - Plain HTTP to a node is accepted without a logged warning; use Tailscale or HTTPS off the local machine (SECURITY.md).
 - Persona only changes the style instruction given to the model. Retrieval scores, transcript source in the Ask answer and play-from-timestamp are not shown in the UI. Segments with timestamps are stored but not yet used.
 - The reply language follows the browser's language; translation of quoted excerpts is requested in the prompt, not a separate step.
-- A forwarded question becomes a prompt addressed to every enabled member whose persona is `elder`, not to chosen members. It is idempotent per user and question.
+- A forwarded question becomes an ordinary family prompt. `prompts.addressed_to` stores the ids of every enabled member whose persona is `elder` (not chosen members), but the field is stored only and is not yet used for filtering: no screen or query reads it, so every member sees the prompt. Forwarding is idempotent per user and question.
+- Dependency versions: `server/package.json` pins `better-sqlite3` at `^9.6.0`, which the Docker build on Node 20 uses. Development on Node 24 used `better-sqlite3` 12 installed locally with `--no-save` (9.6 has no Node 24 prebuild), so the test suite has not run against 9.6. In Sprint 0, run `npm test` inside `node:20-alpine` with 9.6, and consider bumping to `^12` once the Docker build has validated it.
 - Privacy gate details: the privacy value must be exactly `family` or `private`; the question text is embedded on any embedding node (it is the asker's words); the asker's own private passages go to the chat model only if a `local: true` chat node exists.
 - No NAS-local fallback node ships with this slice; the `local: true` flag and its tests exist so one can be added after `ai-eval` shows what the NAS can run.
 - Jobs: a failure backs off 1 min doubling, `failed` after 6 attempts; an unreachable node defers a job without using an attempt; a node that is not allowed skips it. There is no resumable per-job progress, so a transcription restarts from the beginning.

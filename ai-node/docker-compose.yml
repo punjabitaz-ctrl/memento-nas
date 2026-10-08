@@ -8,7 +8,7 @@
 
 services:
   ollama:                                   # embeddings + chat
-    image: ollama/ollama
+    image: ollama/ollama                    # pin a tag you have tested (for example ollama/ollama:<tag>) instead of the floating default
     container_name: memento-ollama
     ports:
       - "${NODE_BIND:-127.0.0.1}:11434:11434"   # set NODE_BIND to your Tailscale IP to serve the NAS

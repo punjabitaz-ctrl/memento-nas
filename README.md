@@ -97,7 +97,7 @@ If you set a key, each memory gets an **"Ask Claude"** checkbox. Only the text o
 Off by default. If you run AI models on a machine you own (for example a desktop with a GPU), Memento can:
 
 - **transcribe voice stories**, so people can search for what was said (a transcript someone has typed or corrected is never overwritten), and
-- let family members **ask the archive** questions and get short answers that cite the stories they came from. If the archive has no record, the question can be sent to an elder as a new prompt.
+- let family members **ask the archive** questions and get short answers that cite the stories they came from. If the archive has no record, the question can be sent to the family as a new prompt (the elders are recorded as its addressees, but that is not yet used for filtering, so every member sees the prompt).
 
 Privacy in short: Memento only talks to the nodes you list in `AI_NODES`, and refuses to start if one is not on your own network (loopback, LAN or Tailscale). Family memories are sent to those machines; *private* memories are never sent to a node unless you flag it `local: true` (a model running on the NAS itself). What a node stores or logs is up to the software on it, so check it. Details: `SECURITY.md`.
 
