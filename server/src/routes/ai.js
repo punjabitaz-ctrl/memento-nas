@@ -10,7 +10,7 @@ const { queueTranscribe } = require('../ai/hooks');
 const { backfill } = require('../ai/backfill');
 const { NodeUnavailable, NoEligibleNode } = require('../ai/errors');
 
-module.exports = function aiRoutes({ db, config, requireAuth, registry }) {
+module.exports = function aiRoutes({ db, config, requireAuth, requireWriter, registry }) {
   const r = express.Router();
   r.use(requireAuth);
 
@@ -53,7 +53,10 @@ module.exports = function aiRoutes({ db, config, requireAuth, registry }) {
     try {
       res.json(await ask({ db, config, registry, user: req.user, question, lang }));
     } catch (e) {
-      if (e instanceof NodeUnavailable || e instanceof NoEligibleNode) {
+      if (e instanceof NoEligibleNode) {
+        throw new HttpError(503, 'No AI helper is set up for this kind of question yet.');
+      }
+      if (e instanceof NodeUnavailable) {
         throw new HttpError(503, 'The AI helper is not reachable right now. Try again when the computer that runs it is on.');
       }
       throw e;
@@ -78,16 +81,26 @@ module.exports = function aiRoutes({ db, config, requireAuth, registry }) {
   });
 
   // A question the archive could not answer becomes a prompt for the elders: this closes the generational loop.
-  r.post('/ask/:id/forward', (req, res) => {
+  // Idempotent: forwarding the same question again returns the prompt that already exists.
+  r.post('/ask/:id/forward', requireWriter, (req, res) => {
     const row = ownLog(req);
-    const elders = db.prepare("SELECT id FROM users WHERE persona = 'elder' AND disabled = 0").all().map((u) => u.id);
-    const id = crypto.randomUUID();
+    if (row.outcome !== 'no_record') {
+      throw new HttpError(400, 'Only questions the archive could not answer can be sent to the family');
+    }
     const text = `${req.user.display_name} asked: "${row.question}"`;
-    db.prepare(
-      `INSERT INTO prompts (id, text, category, life_stage, is_custom, created_by, created_at, source, requested_by, addressed_to)
-       VALUES (?,?,?,?,1,?,?,'ask',?,?)`
-    ).run(id, text, 'family', null, req.user.id, new Date().toISOString(), req.user.id, JSON.stringify(elders));
-    res.json({ prompt: { id, text, category: 'family', isCustom: true, addressedTo: elders } });
+    const shape = (p) => ({ id: p.id, text: p.text, category: p.category, isCustom: true, addressedTo: JSON.parse(p.addressed_to || '[]') });
+    const forward = db.transaction(() => {
+      const existing = db.prepare("SELECT * FROM prompts WHERE source = 'ask' AND requested_by = ? AND text = ?").get(req.user.id, text);
+      if (existing) return shape(existing);
+      const elders = db.prepare("SELECT id FROM users WHERE persona = 'elder' AND disabled = 0").all().map((u) => u.id);
+      const id = crypto.randomUUID();
+      db.prepare(
+        `INSERT INTO prompts (id, text, category, life_stage, is_custom, created_by, created_at, source, requested_by, addressed_to)
+         VALUES (?,?,?,?,1,?,?,'ask',?,?)`
+      ).run(id, text, 'family', null, req.user.id, new Date().toISOString(), req.user.id, JSON.stringify(elders));
+      return { id, text, category: 'family', isCustom: true, addressedTo: elders };
+    });
+    res.json({ prompt: forward() });
   });
 
   r.post('/memories/:id/transcribe', wrap(async (req, res) => {
@@ -99,12 +112,17 @@ module.exports = function aiRoutes({ db, config, requireAuth, registry }) {
     if (m.transcript_source === 'human' && !overwrite) {
       throw new HttpError(409, 'This transcript was written or corrected by a person. Send overwrite:true to replace it.');
     }
-    if (overwrite && m.transcript_source === 'human') {
-      db.prepare("UPDATE memories SET transcript_source = '' WHERE id = ?").run(m.id);
+    // Check there is something to transcribe BEFORE touching anything.
+    if (!db.prepare("SELECT 1 FROM media WHERE memory_id = ? AND kind IN ('audio','video')").get(m.id)) {
+      throw new HttpError(400, 'This memory has no audio or video to transcribe.');
     }
-    const queued = queueTranscribe(db, m.id, { force: true });
-    if (!queued) throw new HttpError(400, 'This memory has no audio or video to transcribe.');
-    res.status(202).json({ queued });
+    const queued = db.transaction(() => {
+      if (m.transcript_source === 'human') {
+        db.prepare("UPDATE memories SET transcript_source = '' WHERE id = ?").run(m.id);
+      }
+      return queueTranscribe(db, m.id, { force: true, skipBusy: true });
+    })();
+    res.status(202).json(queued ? { queued } : { queued: 0, alreadyQueued: true });
   }));
 
   return r;

@@ -18,8 +18,12 @@ function createAi({ db, config, autoStart = true, log = console }) {
   });
   let timer = null;
   if (autoStart) {
-    const queued = backfill(db, config);
-    if (queued.transcribe || queued.embed) log.log(`[ai] queued ${queued.transcribe} transcription and ${queued.embed} embedding jobs`);
+    try {
+      const queued = backfill(db, config);
+      if (queued.transcribe || queued.embed) log.log(`[ai] queued ${queued.transcribe} transcription and ${queued.embed} embedding jobs`);
+    } catch (e) {
+      console.warn('[ai] backfill failed:', e.message); // never let this stop the server from starting
+    }
     worker.start();
     registry.checkAll().catch(() => {});
     timer = setInterval(() => registry.checkAll().catch(() => {}), 60_000);

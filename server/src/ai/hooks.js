@@ -15,11 +15,13 @@ function queueEmbed(db, memoryId) {
   return enqueue(db, { kind: 'embed', memoryId, key: `embed:${memoryId}:${crypto.randomUUID()}` });
 }
 
-/** Queue transcription for each audio/video file. `force` makes a fresh job even if one already ran. */
-function queueTranscribe(db, memoryId, { force = false } = {}) {
+/** Queue transcription for each audio/video file. `force` makes a fresh job even if one already ran; `skipBusy` leaves files that already have a pending/running job alone. */
+function queueTranscribe(db, memoryId, { force = false, skipBusy = false } = {}) {
   const files = db.prepare("SELECT id FROM media WHERE memory_id = ? AND kind IN ('audio','video')").all(memoryId);
   let n = 0;
+  const busy = db.prepare("SELECT 1 FROM ai_jobs WHERE kind = 'transcribe' AND media_id = ? AND status IN ('pending','running')");
   for (const f of files) {
+    if (skipBusy && busy.get(f.id)) continue;
     const key = force ? `transcribe:${f.id}:${crypto.randomUUID()}` : `transcribe:${f.id}`;
     if (enqueue(db, { kind: 'transcribe', memoryId, mediaId: f.id, key })) n++;
   }
