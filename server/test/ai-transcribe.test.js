@@ -271,3 +271,87 @@ test('a LOCAL node keeps transcribing when the memory turns private mid-upload',
   assert.equal(mem(w.db, memoryId).transcript, 'kept local');
   await local.close(); w.close();
 });
+
+// ---- Fix wave D: an aborted upload does not condemn the node, and a local node can take over -------
+
+/** A remote node that stalls after the first bytes while the owner makes the memory private. */
+function stallingRemote(getWorld, getMemoryId, seen) {
+  return rawNode((req, res) => {
+    req.on('data', (d) => {
+      seen.received += d.length;
+      if (!seen.flipped) {
+        seen.flipped = true;
+        req.pause();
+        getWorld().db.prepare("UPDATE memories SET privacy = 'private' WHERE id = ?").run(getMemoryId());
+        setTimeout(() => req.resume(), 50);
+      }
+    });
+    req.on('end', () => {
+      seen.ended = true;
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ text: 'LEAKED TRANSCRIPT', language: 'en', segments: [] }));
+    });
+  });
+}
+const nodeNamed = (w, name) => w.registry.nodes.find((n) => n.name === name);
+
+test('mid-upload privacy flip to remote A: A is aborted but stays healthy, and local node C transcribes the recording', async () => {
+  let w; let memoryId;
+  const seen = { received: 0, flipped: false, ended: false };
+  const a = await stallingRemote(() => w, () => memoryId, seen);
+  const c = await startFakeNode({ transcribe: () => ({ text: 'from the local node', language: 'en', segments: [] }) });
+  w = makeWorld({ nodes: [nodeCfg(a, { name: 'a', priority: 1 }), nodeCfg(c, { name: 'c', priority: 2, local: true })] });
+  const u = addUser(w.db);
+  memoryId = addMemory(w.db, { by: u, type: 'voice_note', privacy: 'family' });
+  const size = 2 * 1024 * 1024;
+  const f = addMedia(w, { memoryId, data: crypto.randomBytes(size) });
+  const out = await makeTranscribeHandler({ ...w, privacyCheckBytes: 64 * 1024 })(job(memoryId, f.id));
+  assert.equal(out, undefined, 'not skipped: the job completed on the local node');
+  assert.equal(seen.ended, false, 'A never received the whole recording');
+  assert.ok(seen.received < size);
+  assert.equal(nodeNamed(w, 'a').healthy, true, 'an aborted upload is not a node failure');
+  assert.equal(c.calls.length, 1);
+  assert.equal(mem(w.db, memoryId).transcript, 'from the local node');
+  await a.close(); await c.close(); w.close();
+});
+
+test('mid-upload privacy flip with NO local node: the job is skipped as before and A stays healthy', async () => {
+  let w; let memoryId;
+  const seen = { received: 0, flipped: false, ended: false };
+  const a = await stallingRemote(() => w, () => memoryId, seen);
+  const b = await startFakeNode({ transcribe: () => ({ text: 'LEAKED VIA B', language: 'en', segments: [] }) });
+  w = makeWorld({ nodes: [nodeCfg(a, { name: 'a', priority: 1 }), nodeCfg(b, { name: 'b', priority: 2 })] });
+  const u = addUser(w.db);
+  memoryId = addMemory(w.db, { by: u, type: 'voice_note', privacy: 'family' });
+  const f = addMedia(w, { memoryId, data: crypto.randomBytes(2 * 1024 * 1024) });
+  const out = await makeTranscribeHandler({ ...w, privacyCheckBytes: 64 * 1024 })(job(memoryId, f.id));
+  assert.deepEqual(out, { skip: 'memory became private while transcribing' });
+  assert.equal(seen.ended, false);
+  assert.equal(b.calls.length, 0, 'the other remote node never saw it');
+  assert.equal(nodeNamed(w, 'a').healthy, true);
+  assert.equal(mem(w.db, memoryId).transcript, '');
+  await a.close(); await b.close(); w.close();
+});
+
+test('a recording shorter than the check interval is still checked once before its first byte is sent', async () => {
+  let w; let memoryId;
+  const b = await startFakeNode();
+  w = makeWorld({ nodes: [nodeCfg(b, { name: 'b' })] });
+  const u = addUser(w.db);
+  memoryId = addMemory(w.db, { by: u, type: 'voice_note', privacy: 'family' });
+  const f = addMedia(w, { memoryId, data: crypto.randomBytes(800) }); // far below the default 4 MiB
+  // The per-attempt check has passed by now; the memory turns private right after the stream was opened.
+  const client = {
+    ...require('../src/ai/client'),
+    transcribe(node, body, opts) {
+      w.db.prepare("UPDATE memories SET privacy = 'private' WHERE id = ?").run(memoryId);
+      return require('../src/ai/client').transcribe(node, body, opts);
+    },
+  };
+  const out = await makeTranscribeHandler({ ...w, client })(job(memoryId, f.id)); // default privacyCheckBytes (4 MiB)
+  assert.deepEqual(out, { skip: 'memory became private while transcribing' });
+  assert.ok(!b.calls.some((c) => c.path === '/v1/audio/transcriptions' && c.body.includes(f.data)), 'the recording never reached the node');
+  assert.equal(mem(w.db, memoryId).transcript, '');
+  assert.equal(nodeNamed(w, 'b').healthy, true);
+  await b.close(); w.close();
+});

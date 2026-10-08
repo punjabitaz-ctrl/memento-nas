@@ -11,7 +11,11 @@ const BECAME_PRIVATE = 'memory became private while transcribing';
 
 /** Raised (never with `nodeFailure`) when a memory turns private while its audio is streaming to a non-local node. */
 class BecamePrivate extends Error {
-  constructor() { super(BECAME_PRIVATE); this.name = 'BecamePrivate'; }
+  constructor() {
+    super(BECAME_PRIVATE);
+    this.name = 'BecamePrivate';
+    this.tryNextNode = true; // withNode moves on to the next still-eligible (local) node, without blaming this one
+  }
 }
 
 /**
@@ -34,14 +38,16 @@ function recomposeTranscript(db, memoryId) {
 }
 
 /**
- * Passes `src` through, re-reading the memory's privacy every `every` bytes. Once it is no longer 'family' the
- * stream is destroyed with BecamePrivate, which makes client.request abort the upload, so the rest of the
- * recording never leaves this machine. LIMITATION: bytes already sent before the change (at most about `every`
- * bytes plus socket buffers since the last check) cannot be recalled; the node's answer is never stored.
+ * Passes `src` through, re-reading the memory's privacy before the first byte and then every `every` bytes, so even a
+ * recording shorter than `every` is checked once. Once it is no longer 'family' the stream is destroyed with
+ * BecamePrivate, which makes client.request abort the upload, so the rest of the recording never leaves this machine.
+ * LIMITATION: bytes already sent before a change cannot be recalled (at most about `every` bytes plus socket buffers
+ * since the last check; a recording shorter than `every` is sent whole once its start check has passed), and the
+ * node's answer is never stored. BecamePrivate carries `tryNextNode`, so withNode lets a local node take over.
  * Only used for non-local nodes: a local node may keep transcribing a private memory.
  */
 function privacyGuard(src, privacyNow, every) {
-  let since = 0;
+  let since = every; // start "due": the first chunk is checked before any byte of the recording is forwarded
   const guard = new Transform({
     transform(chunk, _enc, cb) {
       since += chunk.length;

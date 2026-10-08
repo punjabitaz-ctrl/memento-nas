@@ -118,7 +118,7 @@ test('editing title, description, transcript, story or privacy drops the chunks 
   await t.close();
 });
 
-test('organize drops chunks only when tags, people or location changed', async () => {
+test('organize keeps the chunks (tags, people and location are not chunk text) but still queues one fresh embed', async () => {
   const t = await boot({ withNode: false });
   const id = addMemory(t.w.db, { by: t.uid, title: 'Visit', content: 'Aunt Rose came to dinner in Boston.' });
   seedChunk(t.w.db, id);
@@ -126,11 +126,17 @@ test('organize drops chunks only when tags, people or location changed', async (
   await t.c.json('POST', `/api/memories/${id}/organize`, { json: {} });
   const tagsAfter = t.w.db.prepare('SELECT COUNT(*) c FROM memory_tags WHERE memory_id = ?').get(id).c;
   assert.ok(tagsAfter > tagsBefore, 'the organizer added something');
-  assert.equal(chunkCount(t.w.db, id), 0, 'first organize adds tags/people/location');
-  seedChunk(t.w.db, id);
+  assert.equal(chunkCount(t.w.db, id), 1, 'the text did not change, so the chunks stay');
   await t.c.json('POST', `/api/memories/${id}/organize`, { json: {} });
-  assert.equal(chunkCount(t.w.db, id), 1, 'second organize finds nothing new');
+  assert.equal(chunkCount(t.w.db, id), 1);
   await t.close();
+  const t2 = await boot();
+  const id2 = addMemory(t2.w.db, { by: t2.uid, title: 'Visit', content: 'Aunt Rose came to dinner in Boston.' });
+  seedChunk(t2.w.db, id2);
+  await t2.c.json('POST', `/api/memories/${id2}/organize`, { json: {} });
+  assert.equal(chunkCount(t2.w.db, id2), 1);
+  assert.equal(jobsOf(t2.w.db, 'embed', id2, 'pending'), 1, 're-embed queued for the people header');
+  await t2.close();
 });
 
 test('POST media drops chunks', async () => {

@@ -8,10 +8,12 @@ function memoryText(m) {
 }
 
 /**
- * Drops a memory's embedded passages. Call it inside the SAME transaction as any change to what the memory says
- * (story, title, description, transcript, files, people, tags, location, privacy), so text a person removed can
- * never be served from old chunks. Retrieval falls back to the memory's current text while it has no chunks, and
- * a queued embed job rebuilds them. Works with AI disabled (the chunks table always exists).
+ * Drops a memory's embedded passages. Call it inside the SAME transaction as any change to the text that is
+ * embedded (title, description, story, transcript) or to its privacy, so text a person removed can never be served
+ * from old chunks. Tags, people and location are NOT part of a chunk's text, so changing only those does not call
+ * it (the queued re-embed refreshes the header that mentions people). Adding or deleting a file also calls it,
+ * because the transcript is about to change. Retrieval falls back to the memory's current text while it has no
+ * chunks, and a queued embed job rebuilds them. Works with AI disabled (the chunks table always exists).
  */
 function invalidateChunks(db, memoryId) {
   db.prepare('DELETE FROM chunks WHERE memory_id = ?').run(memoryId);

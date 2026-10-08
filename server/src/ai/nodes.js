@@ -30,6 +30,11 @@ class NodeRegistry {
    * `privacy` is 'family' / 'private', or a function returning one of them. A function is called again right
    * before EVERY attempt (failover included), so work whose memory became private while an earlier node was
    * busy never moves on to a node that is no longer allowed. Any other value (or return value) is a TypeError.
+   *
+   * Errors: one with `nodeFailure === true` marks the node unhealthy and fails over. One with `tryNextNode === true`
+   * (our own guard aborted the call, e.g. a transcription upload stopped because the memory became private) also
+   * moves on to the next still-eligible node but does NOT blame the node. If no node is left it is rethrown as is.
+   * Anything else aborts at once.
    */
   async withNode(capability, privacy, fn) {
     const current = typeof privacy === 'function' ? () => privacy() : () => privacy;
@@ -45,6 +50,7 @@ class NodeRegistry {
     const ready = list.filter((n) => n.healthy || t - n.failedAt >= this.retryAfterMs);
     const order = [...ready, ...list.filter((n) => !ready.includes(n))]; // cooling-down nodes only as a last resort
     let last;
+    let aborted;
     for (const n of order) {
       p = current();
       // Re-checked per attempt (throws TypeError on a bad value). Only nodes from the original list are tried.
@@ -55,6 +61,10 @@ class NodeRegistry {
         n.lastError = '';
         return out;
       } catch (e) {
+        if (e && e.tryNextNode === true && e.nodeFailure !== true) {
+          aborted = e; // our guard stopped this attempt; the node did nothing wrong, so its health is left alone
+          continue;
+        }
         // A non-node error (e.g. HTTP 400/401, or a failing source stream) deliberately aborts: retrying elsewhere cannot fix it.
         if (!e || e.nodeFailure !== true) throw e;
         n.healthy = false;
@@ -63,6 +73,7 @@ class NodeRegistry {
         last = e;
       }
     }
+    if (aborted && !last) throw aborted; // every remaining node was ruled out after a guard abort
     // Privacy tightened mid-way and nothing that is still allowed exists: not retryable as "unavailable".
     if (!last || !this.eligible(capability, p).length) throw noneFor(p);
     throw new NodeUnavailable(`no AI node answered for "${capability}" (${last.message})`);

@@ -351,3 +351,104 @@ test('a family-only question goes to the higher-priority node even when a local 
     }
   );
 });
+
+// ---- Fix wave D: privacy is re-read before EVERY chat attempt ---------------------------------------
+
+const http = require('node:http');
+
+/** A chat-only node the test fully controls: onChat(req, res) runs for every /v1/chat/completions call. */
+function chatOnlyNode(onChat) {
+  const calls = [];
+  const server = http.createServer((req, res) => {
+    const chunks = [];
+    req.on('data', (c) => chunks.push(c));
+    req.on('end', () => {
+      const body = Buffer.concat(chunks);
+      calls.push({ path: req.url, body });
+      if (req.url === '/v1/chat/completions') return onChat(req, res, body);
+      res.writeHead(404, { 'content-type': 'application/json' });
+      res.end('{}');
+    });
+  });
+  return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve({
+    url: `http://127.0.0.1:${server.address().port}`,
+    calls,
+    close: () => new Promise((r) => { server.closeAllConnections(); server.close(r); }),
+  })));
+}
+const sendChat = (res, code, content) => {
+  res.writeHead(code, { 'content-type': 'application/json' });
+  res.end(JSON.stringify(code === 200 ? { choices: [{ message: { role: 'assistant', content } }] } : { error: 'forced' }));
+};
+const chatOnly = (n, over = {}) => ({
+  name: 'n', url: n.url, capabilities: ['chat'], models: { chat: 'c' }, priority: 10, ...over,
+});
+
+test('race: the cited memory turns private while chat node A is failing => non-local B gets ZERO chat calls and ask() throws, no ask_log row', async () => {
+  let x; let memoryId;
+  const a = await chatOnlyNode((req, res) => {
+    x.w.db.prepare("UPDATE memories SET privacy = 'private' WHERE id = ?").run(memoryId); // the author changes their mind ...
+    sendChat(res, 500); // ... and node A falls over, so the registry would fail over to B
+  });
+  const b = await chatOnlyNode((req, res) => sendChat(res, 200, 'LEAKED via B [S1].'));
+  try {
+    x = await world([chatOnly(a, { name: 'a', priority: 1 }), chatOnly(b, { name: 'b', priority: 2 })]);
+    memoryId = await x.add({ by: x.owner, title: 'Pie', content: 'The velvet pie recipe uses saffron.' });
+    await assert.rejects(run(x, 'owner', 'velvet pie saffron'), (e) => e instanceof NoEligibleNode || e instanceof NodeUnavailable);
+    assert.equal(a.calls.length, 1);
+    assert.equal(b.calls.length, 0, 'the non-local node never saw the now-private prompt');
+    assert.ok(!b.calls.some((c) => /velvet pie recipe/i.test(c.body.toString())));
+    assert.equal(x.w.db.prepare('SELECT COUNT(*) n FROM ask_log').get().n, 0);
+  } finally {
+    if (x) x.w.close();
+    await a.close(); await b.close();
+  }
+});
+
+test('race with a LOCAL chat node C: after A fails and the memory turned private, C answers, the citation is kept, B is untouched', async () => {
+  let x; let memoryId;
+  const a = await chatOnlyNode((req, res) => {
+    x.w.db.prepare("UPDATE memories SET privacy = 'private' WHERE id = ?").run(memoryId);
+    sendChat(res, 500);
+  });
+  const b = await chatOnlyNode((req, res) => sendChat(res, 200, 'LEAKED via B [S1].'));
+  const c = await chatOnlyNode((req, res) => sendChat(res, 200, 'It uses saffron [S1].'));
+  try {
+    x = await world([
+      chatOnly(a, { name: 'a', priority: 1 }),
+      chatOnly(b, { name: 'b', priority: 2 }),
+      chatOnly(c, { name: 'c', priority: 3, local: true }),
+    ]);
+    memoryId = await x.add({ by: x.owner, title: 'Pie', content: 'The velvet pie recipe uses saffron.' });
+    const r = await run(x, 'owner', 'velvet pie saffron');
+    assert.equal(r.outcome, 'answered');
+    assert.deepEqual(r.citations.map((q) => q.memoryId), [memoryId]);
+    assert.equal(a.calls.length, 1);
+    assert.equal(b.calls.length, 0);
+    assert.equal(c.calls.length, 1);
+    assert.equal(x.w.db.prepare('SELECT COUNT(*) n FROM ask_log').get().n, 1);
+  } finally {
+    if (x) x.w.close();
+    await a.close(); await b.close(); await c.close();
+  }
+});
+
+test('a cited memory that is deleted before the first chat attempt counts as private: nothing goes to a remote node', async () => {
+  let x;
+  const a = await chatOnlyNode((req, res) => sendChat(res, 200, 'Should not be asked [S1].'));
+  try {
+    x = await world([chatOnly(a)]);
+    const id = await x.add({ by: x.owner, title: 'Pie', content: 'The velvet pie recipe uses saffron.' });
+    // delete the memory between retrieval and the chat call (hook on the first chat attempt is not possible: it never happens)
+    const real = x.w.registry.withNode.bind(x.w.registry);
+    x.w.registry.withNode = (cap, privacy, fn) => {
+      if (cap === 'chat') x.w.db.prepare('DELETE FROM memories WHERE id = ?').run(id);
+      return real(cap, privacy, fn);
+    };
+    await assert.rejects(run(x, 'owner', 'velvet pie saffron'), NoEligibleNode);
+    assert.equal(a.calls.length, 0);
+  } finally {
+    if (x) x.w.close();
+    await a.close();
+  }
+});

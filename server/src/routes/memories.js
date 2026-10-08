@@ -188,12 +188,10 @@ module.exports = function memoryRoutes({ db, config, requireAuth, requireWriter 
     const tags = cleanTags([...db.prepare('SELECT tag FROM memory_tags WHERE memory_id=?').all(m.id).map((x) => x.tag), ...out.tags]);
     const people = cleanPeople([...db.prepare('SELECT name, relationship FROM memory_people WHERE memory_id=?').all(m.id), ...out.people]);
     const location = m.location || out.location || '';
-    const key = (xs) => xs.map((x) => (typeof x === 'string' ? x : `${x.name}|${x.relationship}`)).sort().join('\n');
-    const oldTags = db.prepare('SELECT tag FROM memory_tags WHERE memory_id=?').all(m.id).map((x) => x.tag);
-    const oldPeople = db.prepare('SELECT name, relationship FROM memory_people WHERE memory_id=?').all(m.id);
-    const changed = key(tags) !== key(oldTags) || key(people) !== key(oldPeople) || location !== m.location;
+    // Organizing only touches the summary, tags, people, location and (if empty) the date. None of them is part of a
+    // chunk's text, so the stored chunks stay valid and are NOT dropped. People names do appear in the embedding
+    // header, which is why a fresh embed is still queued below (it replaces the chunks once it finishes).
     db.transaction(() => {
-      if (changed) invalidateChunks(db, m.id);
       db.prepare('UPDATE memories SET ai_summary=?, ai_source=?, location=?, updated_at=? WHERE id=?').run(
         out.summary || m.ai_summary, source, location, new Date().toISOString(), m.id);
       if (!m.memory_date && out.date) {

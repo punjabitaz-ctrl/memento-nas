@@ -208,8 +208,12 @@ function log(db, userId, question, answer, cited, outcome) {
  * where `dropped` counts the model's sentences removed for citing nothing valid (0 when no model was called).
  * The question is cut to 1000 characters. Private passages only ever go to a `local` chat node.
  *
- * Failure: if the chat node cannot be used, ask() THROWS (NodeUnavailable / NoEligibleNode) and writes NO ask_log
- * row. The route maps that to 503. (A failed embed step does not throw: retrieval degrades to keyword search.)
+ * Privacy is re-read for every cited memory before each chat attempt (failover included). If a memory turned private
+ * after the prompt was built, the prompt is only ever sent to a `local` node; with none, ask() throws NoEligibleNode.
+ *
+ * Failure: if the chat node cannot be used, ask() THROWS and writes NO ask_log row. The route maps NodeUnavailable and
+ * NoEligibleNode to 503, and a NodeError (the node refused the request: bad token, prompt too long) to 502.
+ * (A failed embed step does not throw: retrieval degrades to keyword search.)
  */
 async function ask({ db, config, registry, user, question, lang = 'en', client = clientDefault }) {
   const q = String(question == null ? '' : question).trim().slice(0, MAX_QUESTION).trimEnd();
@@ -225,8 +229,17 @@ async function ask({ db, config, registry, user, question, lang = 'en', client =
   });
   if (!usable.length) return noRecord();
 
-  const privacy = usable.some((p) => p.privacy === 'private') ? 'private' : 'family';
-  const raw = await registry.withNode('chat', privacy, (node) =>
+  // The prompt holds the text of every memory in `usable`. A cited memory may be made private (or deleted) while a
+  // node is slow or failing, so the effective privacy is re-read from the database before EVERY attempt, failover
+  // included: a missing row or any private row means 'private', and then only a local node may receive the prompt.
+  const ids = [...new Set(usable.map((p) => p.memoryId))];
+  const selectPrivacy = db.prepare(`SELECT id, privacy FROM memories WHERE id IN (${ids.map(() => '?').join(',')})`);
+  const privacyNow = () => {
+    const rows = selectPrivacy.all(...ids);
+    if (rows.length < ids.length) return 'private'; // a deleted memory is the most restrictive case
+    return rows.every((r) => r.privacy === 'family') ? 'family' : 'private'; // anything unexpected fails closed
+  };
+  const raw = await registry.withNode('chat', privacyNow, (node) =>
     client.chat(node, [
       { role: 'system', content: systemPrompt(lang, user.persona) },
       { role: 'user', content: userPrompt(usable, q) },
