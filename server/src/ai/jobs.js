@@ -4,12 +4,17 @@ const crypto = require('node:crypto');
 const MAX_ATTEMPTS = 6;
 const iso = (ms) => new Date(ms).toISOString();
 
-/** Adds a job unless one with the same idempotency key exists. Returns true when a row was added. */
+/**
+ * Adds a job unless one with the same idempotency key already exists.
+ * Returns true when a row was added, false for a duplicate key (silently skipped).
+ * Any other constraint violation (unknown kind, null key or memory id) throws, so a bad caller fails loudly.
+ */
 function enqueue(db, { kind, memoryId, mediaId = null, key, delayMs = 0 }) {
   const now = Date.now();
   const info = db.prepare(
-    `INSERT OR IGNORE INTO ai_jobs (id, kind, memory_id, media_id, status, attempts, next_run_at, last_error, idempotency_key, created_at, updated_at)
-     VALUES (?,?,?,?,'pending',0,?,'',?,?,?)`
+    `INSERT INTO ai_jobs (id, kind, memory_id, media_id, status, attempts, next_run_at, last_error, idempotency_key, created_at, updated_at)
+     VALUES (?,?,?,?,'pending',0,?,'',?,?,?)
+     ON CONFLICT(idempotency_key) DO NOTHING`
   ).run(crypto.randomUUID(), kind, memoryId, mediaId, iso(now + delayMs), key, iso(now), iso(now));
   return info.changes === 1;
 }
@@ -37,7 +42,10 @@ function defer(db, id, delayMs, reason) {
   ).run(iso(Date.now() + delayMs), String(reason).slice(0, 500), iso(Date.now()), id);
 }
 
-/** Record a genuine failure: exponential backoff (1m, 2m, 4m ... capped at 1h), then give up. */
+/**
+ * Record a genuine failure: exponential backoff (1m, 2m, 4m, ...), then give up once MAX_ATTEMPTS is reached.
+ * The 1h cap only takes effect if MAX_ATTEMPTS is raised to 8 or more; at today's 6 the longest wait is 16m.
+ */
 function fail(db, job, err, nowMs = Date.now()) {
   const msg = String((err && err.message) || err).slice(0, 500);
   if (job.attempts >= MAX_ATTEMPTS) return setStatus(db, job.id, 'failed', msg);

@@ -19,7 +19,7 @@ function createWorker({ db, handlers, pollMs = 5000, deferMs = 300_000, now = Da
       const handler = handlers[job.kind];
       if (!handler) throw new Error(`no handler for job kind "${job.kind}"`);
       const outcome = await handler(job);
-      if (outcome && outcome.skip) jobs.skip(db, job.id, outcome.skip);
+      if (outcome && typeof outcome === 'object' && 'skip' in outcome) jobs.skip(db, job.id, String(outcome.skip || 'skipped'));
       else jobs.complete(db, job.id);
     } catch (e) {
       if (e instanceof NoEligibleNode) jobs.skip(db, job.id, e.message);
@@ -45,7 +45,11 @@ function createWorker({ db, handlers, pollMs = 5000, deferMs = 300_000, now = Da
       // Checks `stopped` between jobs so stop() waits for at most the job in flight, not the whole backlog.
       inflight = (async () => { while (!stopped && (await tick())); })() // eslint-disable-line no-empty
         .catch((e) => log.warn(`[ai] worker error: ${e && e.message}`))
-        .finally(() => { if (!stopped) timer = setTimeout(loop, pollMs); });
+        .finally(() => {
+          if (stopped) return;
+          timer = setTimeout(loop, pollMs);
+          if (timer.unref) timer.unref(); // a forgotten worker must not keep the process alive
+        });
     };
     loop();
   }

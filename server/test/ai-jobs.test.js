@@ -22,6 +22,21 @@ test('enqueue is idempotent on the key', () => {
   w.close();
 });
 
+test('enqueue throws on an invalid kind instead of reporting a duplicate', () => {
+  const { w, m } = setup();
+  assert.throws(() => jobs.enqueue(w.db, { kind: 'bogus', memoryId: m, key: 'bad-kind' }), /CHECK constraint failed/);
+  assert.equal(row(w.db, 'bad-kind'), undefined);
+  w.close();
+});
+
+test('enqueue throws on a null idempotency key or memory id instead of dropping the job', () => {
+  const { w, m } = setup();
+  assert.throws(() => jobs.enqueue(w.db, { kind: 'embed', memoryId: m, key: null }), /NOT NULL constraint failed/);
+  assert.throws(() => jobs.enqueue(w.db, { kind: 'embed', memoryId: null, key: 'no-memory' }), /NOT NULL constraint failed/);
+  assert.equal(w.db.prepare('SELECT COUNT(*) c FROM ai_jobs').get().c, 0);
+  w.close();
+});
+
 test('claim honours next_run_at and marks running; empty queue returns null', () => {
   const { w, m } = setup();
   assert.equal(jobs.claim(w.db), null);
@@ -85,8 +100,7 @@ test('worker maps handler outcomes onto job states', async () => {
     down: async () => { throw new NodeUnavailable('desktop asleep'); },
     bug: async () => { throw new Error('bug'); },
   };
-  // kind is CHECK-constrained to transcribe|embed (and enqueue's OR IGNORE would silently drop anything else),
-  // so every job is 'embed' and the handler routes on the idempotency key.
+  // kind is CHECK-constrained to transcribe|embed, so every job is 'embed' and the handler routes on the idempotency key.
   for (const k of Object.keys(outcomes)) assert.equal(jobs.enqueue(w.db, { kind: 'embed', memoryId: m, key: k }), true);
   const worker = createWorker({ db: w.db, handlers: { embed: (job) => outcomes[job.idempotency_key](job) }, deferMs: 300_000, log: { warn() {} } });
   await worker.drain();
@@ -112,10 +126,20 @@ test('worker start/stop runs due jobs in the background and stop waits for the i
   });
   worker.start();
   jobs.enqueue(w.db, { kind: 'embed', memoryId: m, key: 'bg' });
-  await new Promise((r) => setTimeout(r, 60)); // job is now in flight
+  await waitFor(() => row(w.db, 'bg') && row(w.db, 'bg').status === 'running', 2000); // job is now in flight
   await worker.stop();
   assert.equal(finished, true);
   assert.equal(row(w.db, 'bg').status, 'done');
+  w.close();
+});
+
+test('worker treats an empty skip reason as a skip, not a completion', async () => {
+  const { w, m } = setup();
+  jobs.enqueue(w.db, { kind: 'embed', memoryId: m, key: 'empty-skip' });
+  const worker = createWorker({ db: w.db, handlers: { embed: async () => ({ skip: '' }) }, log: { warn() {} } });
+  await worker.drain();
+  assert.equal(row(w.db, 'empty-skip').status, 'skipped');
+  assert.equal(row(w.db, 'empty-skip').last_error, 'skipped');
   w.close();
 });
 
