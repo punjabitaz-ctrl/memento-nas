@@ -10,9 +10,15 @@ function fingerprint(config) {
 
 /**
  * Queues missing AI work (recordings without a transcript, memories without embeddings).
- * Idempotent while the node configuration is unchanged.
+ * Idempotent while the node configuration is unchanged. Memories whose newest chunk is older than the memory
+ * itself (edited after they were embedded) count as missing too, so stale passages get refreshed.
+ * The whole enqueue loop is one transaction: one fsync instead of one per job.
  */
 function backfill(db, config) {
+  return db.transaction(() => backfillInner(db, config))();
+}
+
+function backfillInner(db, config) {
   const fp = fingerprint(config);
   const out = { transcribe: 0, embed: 0 };
 
@@ -27,13 +33,14 @@ function backfill(db, config) {
 
   if (config.ai.embedModel) {
     const memories = db.prepare(
-      `SELECT m.id FROM memories m
+      `SELECT m.id, m.updated_at FROM memories m
        WHERE (m.title != '' OR m.description != '' OR m.content != '' OR m.transcript != '')
-         AND NOT EXISTS (SELECT 1 FROM chunks c WHERE c.memory_id = m.id AND c.model = ?)
+         AND (NOT EXISTS (SELECT 1 FROM chunks c WHERE c.memory_id = m.id AND c.model = ?)
+              OR (SELECT MAX(c.created_at) FROM chunks c WHERE c.memory_id = m.id) < m.updated_at)
          AND NOT EXISTS (SELECT 1 FROM ai_jobs j WHERE j.memory_id = m.id AND j.kind = 'embed' AND j.status IN ('pending','running'))`
     ).all(config.ai.embedModel);
     for (const x of memories) {
-      if (enqueue(db, { kind: 'embed', memoryId: x.id, key: `embed:${x.id}:bf:${fp}:${config.ai.embedModel}` })) out.embed++;
+      if (enqueue(db, { kind: 'embed', memoryId: x.id, key: `embed:${x.id}:bf:${fp}:${config.ai.embedModel}:${x.updated_at}` })) out.embed++;
     }
   }
   return out;

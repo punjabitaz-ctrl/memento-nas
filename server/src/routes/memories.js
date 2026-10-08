@@ -8,7 +8,7 @@ const { parseUpload, removeFiles, vaultPath } = require('../uploads');
 const { openDecryptStream } = require('../crypto');
 const { organize, organizeWithClaude } = require('../organize');
 const { reindex } = require('../db');
-const { onMemorySaved } = require('../ai/hooks');
+const { onMemorySaved, invalidateChunks } = require('../ai/hooks');
 const { recomposeTranscript } = require('../ai/transcribe');
 
 const TYPES = ['photo', 'video', 'voice_note', 'text_note', 'document'];
@@ -161,7 +161,11 @@ module.exports = function memoryRoutes({ db, config, requireAuth, requireWriter 
     // Whatever a person typed wins over the machine from now on. Clearing the box clears the human marker;
     // use POST /memories/:id/transcribe (force) to have the machine redo it.
     const tSource = next.transcript === m.transcript ? m.transcript_source : next.transcript ? 'human' : '';
+    // Anything that changes what the memory says makes its stored chunks untrustworthy: drop them in the same
+    // transaction so removed text can never be served while the re-embed job is still queued.
+    const textChanged = ['title', 'description', 'content', 'transcript', 'privacy'].some((k) => next[k] !== m[k]);
     db.transaction(() => {
+      if (textChanged) invalidateChunks(db, m.id);
       db.prepare(
         'UPDATE memories SET title=?, description=?, content=?, transcript=?, transcript_source=?, location=?, privacy=?, memory_date=?, date_precision=?, updated_at=? WHERE id=?'
       ).run(next.title, next.description, next.content, next.transcript, tSource, next.location, next.privacy, next.memory_date, next.date_precision, new Date().toISOString(), m.id);
@@ -183,14 +187,21 @@ module.exports = function memoryRoutes({ db, config, requireAuth, requireWriter 
     const { out, source } = await suggest(m, media, !!req.body.useAI);
     const tags = cleanTags([...db.prepare('SELECT tag FROM memory_tags WHERE memory_id=?').all(m.id).map((x) => x.tag), ...out.tags]);
     const people = cleanPeople([...db.prepare('SELECT name, relationship FROM memory_people WHERE memory_id=?').all(m.id), ...out.people]);
+    const location = m.location || out.location || '';
+    const key = (xs) => xs.map((x) => (typeof x === 'string' ? x : `${x.name}|${x.relationship}`)).sort().join('\n');
+    const oldTags = db.prepare('SELECT tag FROM memory_tags WHERE memory_id=?').all(m.id).map((x) => x.tag);
+    const oldPeople = db.prepare('SELECT name, relationship FROM memory_people WHERE memory_id=?').all(m.id);
+    const changed = key(tags) !== key(oldTags) || key(people) !== key(oldPeople) || location !== m.location;
     db.transaction(() => {
+      if (changed) invalidateChunks(db, m.id);
       db.prepare('UPDATE memories SET ai_summary=?, ai_source=?, location=?, updated_at=? WHERE id=?').run(
-        out.summary || m.ai_summary, source, m.location || out.location || '', new Date().toISOString(), m.id);
+        out.summary || m.ai_summary, source, location, new Date().toISOString(), m.id);
       if (!m.memory_date && out.date) {
         db.prepare('UPDATE memories SET memory_date=?, date_precision=? WHERE id=?').run(out.date.memoryDate, out.date.precision, m.id);
       }
       setTagsPeople(db, m.id, tags, people);
     })();
+    onMemorySaved(db, config, m.id); // updated_at moved, so any in-flight embed job will skip itself: queue a fresh one
     res.json({ memory: hydrate(db, [getMemory(m.id)])[0] });
   }));
 
@@ -207,6 +218,7 @@ module.exports = function memoryRoutes({ db, config, requireAuth, requireWriter 
         const im = db.prepare('INSERT INTO media (id, memory_id, kind, mime, original_name, size_plain, duration, created_at) VALUES (?,?,?,?,?,?,?,?)');
         for (const x of files) im.run(x.id, m.id, x.kind, x.mime, x.filename, x.sizePlain, x.kind === 'audio' || x.kind === 'video' ? duration : null, now);
         db.prepare('UPDATE memories SET updated_at=? WHERE id=?').run(now, m.id);
+        invalidateChunks(db, m.id);
       })();
     } catch (e) {
       removeFiles(config, files.map((x) => x.id));
@@ -225,6 +237,7 @@ module.exports = function memoryRoutes({ db, config, requireAuth, requireWriter 
       db.prepare('DELETE FROM media WHERE id = ?').run(row.id);
       // Drop this recording's machine transcript from the memory and search index (human transcripts are left alone).
       recomposeTranscript(db, m.id);
+      invalidateChunks(db, m.id); // also when no machine transcript changed: the file itself is gone
     })();
     removeFiles(config, [row.id]);
     onMemorySaved(db, config, m.id);

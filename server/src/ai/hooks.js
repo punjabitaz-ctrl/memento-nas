@@ -7,6 +7,16 @@ function memoryText(m) {
   return [m.title, m.description, m.content, m.transcript].filter((s) => s && s.trim()).join('\n\n');
 }
 
+/**
+ * Drops a memory's embedded passages. Call it inside the SAME transaction as any change to what the memory says
+ * (story, title, description, transcript, files, people, tags, location, privacy), so text a person removed can
+ * never be served from old chunks. Retrieval falls back to the memory's current text while it has no chunks, and
+ * a queued embed job rebuilds them. Works with AI disabled (the chunks table always exists).
+ */
+function invalidateChunks(db, memoryId) {
+  db.prepare('DELETE FROM chunks WHERE memory_id = ?').run(memoryId);
+}
+
 /** Queue (re-)embedding unless one is already waiting or there is nothing to embed. */
 function queueEmbed(db, memoryId) {
   const m = db.prepare('SELECT title, description, content, transcript FROM memories WHERE id = ?').get(memoryId);
@@ -43,4 +53,4 @@ function onMemorySaved(db, config, memoryId) {
   }
 }
 
-module.exports = { memoryText, queueEmbed, queueTranscribe, onMemorySaved };
+module.exports = { memoryText, invalidateChunks, queueEmbed, queueTranscribe, onMemorySaved };

@@ -19,11 +19,14 @@ export default function MemoryDetail() {
   const fileIn = useRef<HTMLInputElement>(null);
   const job = data?.memory.transcriptJob;
   useEffect(() => {
-    if (job !== 'pending') return;
+    // Not while the edit form is open: a refresh must never replace text the person is typing around.
+    if (job !== 'pending' || editing) return;
     // Poll quietly while the AI helper works (no spinner, so the page and any edits stay put).
-    const t = setInterval(() => { api.memory(id).then(setData).catch(() => {}); }, 5000);
-    return () => clearInterval(t);
-  }, [job, id, setData]);
+    // `alive` drops a reply that arrives after the effect was torn down (navigated to another memory, started editing).
+    let alive = true;
+    const t = setInterval(() => { api.memory(id).then((d) => { if (alive) setData(d); }).catch(() => {}); }, 5000);
+    return () => { alive = false; clearInterval(t); };
+  }, [job, id, editing, setData]);
 
   if (loading) return <Spinner />;
   if (error || !data) return <Banner kind="error" title="Can’t open this memory">{error || 'It may have been removed, or it’s private to someone else.'} <Link to="/stories">Back to all stories</Link></Banner>;
@@ -143,10 +146,21 @@ export default function MemoryDetail() {
   );
 }
 
-function EditForm({ m, onCancel, onSaved }: { m: Memory; onCancel: () => void; onSaved: (m: Memory) => void }) {
-  const [f, setF] = useState({
+function initialValues(m: Memory) {
+  return {
     title: m.title, description: m.description, content: m.content, transcript: m.transcript, location: m.location,
     people: peopleToText(m.people), tags: m.tags.join(', '), privacy: m.privacy,
+    memoryDate: dateToString(stringToDate(editableDate(m.memoryDate, m.datePrecision))),
+  };
+}
+
+function EditForm({ m, onCancel, onSaved }: { m: Memory; onCancel: () => void; onSaved: (m: Memory) => void }) {
+  // What the form started with. Only fields the person changed are sent, so an untouched field (above all a long
+  // machine transcript that arrived while they were typing) can never overwrite what the server now holds.
+  const [initial] = useState(() => initialValues(m));
+  const [f, setF] = useState(() => {
+    const { memoryDate: _d, ...fields } = initial;
+    return fields;
   });
   const [date, setDate] = useState(stringToDate(editableDate(m.memoryDate, m.datePrecision)));
   const [busy, setBusy] = useState(false);
@@ -157,11 +171,15 @@ function EditForm({ m, onCancel, onSaved }: { m: Memory; onCancel: () => void; o
     e.preventDefault();
     setBusy(true); setError(null);
     try {
-      const { memory } = await api.updateMemory(m.id, {
-        title: f.title, description: f.description, content: f.content, transcript: f.transcript, location: f.location, privacy: f.privacy,
-        memoryDate: dateToString(date), people: parsePeople(f.people), tags: parseCsv(f.tags),
-      });
-      onSaved(memory);
+      const patch: Record<string, unknown> = {};
+      for (const k of ['title', 'description', 'content', 'transcript', 'location', 'privacy'] as const) {
+        if (f[k] !== initial[k]) patch[k] = f[k];
+      }
+      if (dateToString(date) !== initial.memoryDate) patch.memoryDate = dateToString(date);
+      if (f.people !== initial.people) patch.people = parsePeople(f.people);
+      if (f.tags !== initial.tags) patch.tags = parseCsv(f.tags);
+      // Nothing changed: there is nothing to save (and no reason to touch the memory or re-index it).
+      onSaved(Object.keys(patch).length ? (await api.updateMemory(m.id, patch)).memory : m);
     } catch (err) { setError((err as Error).message); setBusy(false); }
   }
   return (

@@ -4,7 +4,10 @@
  * Version 1 is the original v2.0 schema created by db.js (CREATE IF NOT EXISTS).
  * To change the schema: append { version, name, up } here. Never edit or reorder applied ones.
  */
-const MIGRATIONS = [{ version: 2, name: 'ai-foundation', up: require('./002-ai-foundation') }];
+const MIGRATIONS = [
+  { version: 2, name: 'ai-foundation', up: require('./002-ai-foundation') },
+  { version: 3, name: 'ai-jobs-media-index', up: require('./003-ai-jobs-media-index') },
+];
 const LATEST = MIGRATIONS[MIGRATIONS.length - 1].version;
 
 function currentVersion(db) {

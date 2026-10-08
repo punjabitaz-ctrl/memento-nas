@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const Database = require('better-sqlite3');
 const { SCHEMA } = require('../src/db');
-const { migrate, currentVersion, LATEST } = require('../src/migrations');
+const { migrate, currentVersion, LATEST, MIGRATIONS } = require('../src/migrations');
 
 function v1db() {
   const db = new Database(':memory:');
@@ -12,13 +12,16 @@ function v1db() {
   return db;
 }
 const tables = (db) => db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map((r) => r.name);
+const indexes = (db) => db.prepare("SELECT name FROM sqlite_master WHERE type='index'").all().map((r) => r.name);
 const cols = (db, t) => db.prepare(`PRAGMA table_info(${t})`).all().map((c) => c.name);
 
 test('a v2.0 database (no schema_version) upgrades to the latest version', () => {
   const db = v1db();
   assert.equal(currentVersion(db), 1);
   assert.equal(migrate(db), LATEST);
+  assert.equal(LATEST, 3);
   assert.equal(currentVersion(db), LATEST);
+  assert.ok(indexes(db).includes('idx_ai_jobs_media'));
   for (const t of ['ai_jobs', 'chunks', 'ask_log']) assert.ok(tables(db).includes(t), t);
   assert.ok(cols(db, 'memories').includes('transcript_source'));
   assert.ok(cols(db, 'memories').includes('transcript_languages'));
@@ -43,6 +46,18 @@ test('migrate is idempotent', () => {
   const db = v1db();
   migrate(db);
   assert.equal(migrate(db), LATEST);
+  assert.equal(indexes(db).filter((n) => n === 'idx_ai_jobs_media').length, 1);
+});
+
+test('a database already at version 2 upgrades to 3 and gains the ai_jobs(media_id) index', () => {
+  const db = v1db();
+  migrate(db, MIGRATIONS.filter((m) => m.version <= 2));
+  assert.equal(currentVersion(db), 2);
+  assert.ok(!indexes(db).includes('idx_ai_jobs_media'));
+  assert.equal(migrate(db), 3);
+  assert.equal(currentVersion(db), 3);
+  assert.ok(indexes(db).includes('idx_ai_jobs_media'));
+  assert.equal(migrate(db), 3, 'running it again changes nothing');
 });
 
 test('a failing migration rolls back completely and leaves the version unchanged', () => {

@@ -4,7 +4,7 @@ const { openDecryptStream } = require('../crypto');
 const { vaultPath } = require('../uploads');
 const { reindex } = require('../db');
 const clientDefault = require('./client');
-const { queueEmbed } = require('./hooks');
+const { queueEmbed, invalidateChunks } = require('./hooks');
 
 const PRIVACY_CHECK_BYTES = 4 * 1024 * 1024;
 const BECAME_PRIVATE = 'memory became private while transcribing';
@@ -19,14 +19,16 @@ class BecamePrivate extends Error {
  * Returns true when the memory was updated.
  */
 function recomposeTranscript(db, memoryId) {
-  const mem = db.prepare('SELECT transcript_source FROM memories WHERE id = ?').get(memoryId);
+  const mem = db.prepare('SELECT transcript, transcript_source FROM memories WHERE id = ?').get(memoryId);
   if (!mem || mem.transcript_source === 'human') return false;
   const rows = db.prepare(
     "SELECT transcript, transcript_language FROM media WHERE memory_id = ? AND transcript != '' ORDER BY created_at, rowid"
   ).all(memoryId);
   const langs = [...new Set(rows.map((r) => r.transcript_language).filter(Boolean))];
+  const text = rows.map((r) => r.transcript).join('\n\n');
   db.prepare('UPDATE memories SET transcript = ?, transcript_source = ?, transcript_languages = ?, updated_at = ? WHERE id = ?')
-    .run(rows.map((r) => r.transcript).join('\n\n'), rows.length ? 'machine' : '', JSON.stringify(langs), new Date().toISOString(), memoryId);
+    .run(text, rows.length ? 'machine' : '', JSON.stringify(langs), new Date().toISOString(), memoryId);
+  if (text !== mem.transcript) invalidateChunks(db, memoryId);
   reindex(db, memoryId);
   return true;
 }
