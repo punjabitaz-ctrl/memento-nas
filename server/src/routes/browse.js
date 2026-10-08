@@ -1,15 +1,8 @@
 'use strict';
 /** Read-only discovery: timeline, gaps, on-this-day, stats, search, people, tags, narrate. */
 const express = require('express');
-const { HttpError, wrap, str } = require('../util');
+const { HttpError, wrap, str, ftsQuery } = require('../util');
 const { VISIBLE, hydrate } = require('../memories');
-
-/** Build a safe FTS5 MATCH expression: every word quoted, last one prefix-matched. */
-function ftsQuery(q) {
-  const words = String(q || '').match(/[\p{L}\p{N}]+/gu) || [];
-  if (!words.length) return null;
-  return words.slice(0, 12).map((w, i, a) => `"${w}"${i === a.length - 1 ? '*' : ''}`).join(' ');
-}
 
 function light(db, rows) {
   const full = hydrate(db, rows);

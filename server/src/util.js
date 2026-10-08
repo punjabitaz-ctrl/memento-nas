@@ -97,4 +97,24 @@ function slug(s, max = 40) {
   );
 }
 
-module.exports = { HttpError, wrap, str, oneOf, parseFuzzyDate, parseJsonField, cleanTags, cleanPeople, slug, MIN_YEAR, MAX_YEAR };
+const STOP_WORDS = new Set((
+  'the and for with about was were are who what when where why how did does has had have his her their our your you me my ' +
+  'tell can could would should that this from into any all not but than then there them they him she its let say said'
+).split(' '));
+
+/**
+ * Safe FTS5 MATCH expression (every term quoted).
+ * mode 'and' (default): all words, last one prefix-matched; used by the search box.
+ * mode 'or': distinct non-stop-words joined with OR; used for natural-language questions.
+ */
+function ftsQuery(q, { mode = 'and' } = {}) {
+  const words = String(q || '').match(/[\p{L}\p{N}]+/gu) || [];
+  if (!words.length) return null;
+  if (mode === 'or') {
+    const list = [...new Set(words.map((w) => w.toLowerCase()).filter((w) => w.length >= 3 && !STOP_WORDS.has(w)))].slice(0, 12);
+    return list.length ? list.map((w) => `"${w}"`).join(' OR ') : null;
+  }
+  return words.slice(0, 12).map((w, i, a) => `"${w}"${i === a.length - 1 ? '*' : ''}`).join(' ');
+}
+
+module.exports = { HttpError, wrap, str, oneOf, parseFuzzyDate, parseJsonField, cleanTags, cleanPeople, slug, ftsQuery, MIN_YEAR, MAX_YEAR };
