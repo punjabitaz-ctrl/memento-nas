@@ -111,3 +111,146 @@ test('registry.status hides URLs unless asked and never exposes tokens; checkAll
   assert.equal(r.status()[0].healthy, true);
   await fake.close();
 });
+
+// ---- Fix wave: hardening ----------------------------------------------------------------------
+
+const http = require('node:http');
+
+/** A bare http server whose behaviour the test controls completely. */
+function rawServer(handler) {
+  const server = http.createServer(handler);
+  return new Promise((resolve) =>
+    server.listen(0, '127.0.0.1', () =>
+      resolve({
+        url: `http://127.0.0.1:${server.address().port}`,
+        close: () => new Promise((r) => { server.closeAllConnections(); server.close(r); }),
+      })));
+}
+
+test('errors: response body text (which can echo user input) never appears in the error message', async () => {
+  const SECRET = 'MY-PRIVATE-DIARY-ENTRY';
+  const srv = await rawServer((req, res) => {
+    req.resume();
+    req.on('end', () => {
+      res.writeHead(Number(req.headers['x-status'] || 500), { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ detail: [{ input: SECRET, msg: `bad input ${SECRET}` }] }));
+    });
+  });
+  const node = { token: 'tok-abc123', local: false, name: 'desk', url: srv.url };
+  for (const [status, failure] of [[500, true], [400, false]]) {
+    await assert.rejects(
+      client.request(node, '/v1/embeddings', { headers: { 'content-type': 'application/json', 'x-status': String(status) }, body: JSON.stringify({ input: [SECRET] }) }, 5000),
+      (e) => {
+        assert.equal(e.nodeFailure, failure);
+        assert.equal(e.message, `desk answered HTTP ${status}`);
+        assert.ok(!e.message.includes(SECRET));
+        assert.ok(!e.message.includes(srv.url) && !e.message.includes('127.0.0.1'));
+        assert.ok(!e.message.includes('tok-abc123'));
+        return true;
+      }
+    );
+  }
+  await srv.close();
+});
+
+test('transport: a node that never answers hits the call deadline => nodeFailure "timed out"', async () => {
+  const srv = await rawServer((req) => { req.resume(); /* never respond */ });
+  const node = { token: '', local: false, name: 'slow', url: srv.url };
+  const t0 = Date.now();
+  await assert.rejects(
+    client.request(node, '/v1/models', { method: 'GET' }, 150),
+    (e) => e.nodeFailure === true && /slow/.test(e.message) && /timed out/.test(e.message) && !e.message.includes('127.0.0.1')
+  );
+  assert.ok(Date.now() - t0 < 3000);
+  await srv.close();
+});
+
+test('transport: a node that sends headers late (but within the deadline) still succeeds', async () => {
+  const srv = await rawServer((req, res) => {
+    req.resume();
+    req.on('end', () => setTimeout(() => { res.writeHead(200, { 'content-type': 'application/json' }); res.end('{"data":[]}'); }, 200));
+  });
+  const node = { token: '', local: false, name: 'late', url: srv.url };
+  const r = await client.request(node, '/v1/models', { method: 'GET' }, 5000);
+  assert.equal(r.status, 200);
+  await srv.close();
+});
+
+test('transcribe: the source readable is destroyed after a failed call', async () => {
+  const fake = await startFakeNode({ failStatus: 500 });
+  const src = Readable.from([Buffer.alloc(1024, 1), Buffer.alloc(1024, 2), Buffer.alloc(1024, 3)]);
+  await assert.rejects(client.transcribe(asNode(fake), src, { mime: 'audio/webm' }), (e) => e.nodeFailure === true);
+  assert.equal(src.destroyed, true);
+  await fake.close();
+  const src2 = Readable.from([Buffer.alloc(16)]);
+  await assert.rejects(client.transcribe(asNode(fake), src2, { mime: 'audio/webm' }), (e) => e.nodeFailure === true && /unreachable/.test(e.message));
+  assert.equal(src2.destroyed, true);
+});
+
+test('transcribe: a failing source stream surfaces its own error, not a node failure', async () => {
+  const fake = await startFakeNode();
+  async function* broken() { yield Buffer.from('some audio'); throw new Error('vault decrypt failed'); }
+  const src = Readable.from(broken());
+  await assert.rejects(client.transcribe(asNode(fake), src, { mime: 'audio/webm' }), (e) => {
+    assert.equal(e.message, 'vault decrypt failed');
+    assert.equal(e.nodeFailure, undefined);
+    assert.ok(!(e instanceof client.NodeError));
+    return true;
+  });
+  assert.equal(src.destroyed, true);
+  // through the registry: not marked unhealthy, no failover retry
+  const r = reg([nodeCfg(fake, { name: 'a' }), nodeCfg(fake, { name: 'b', priority: 20 })]);
+  let calls = 0;
+  async function* broken2() { yield Buffer.from('x'); throw new Error('vault decrypt failed'); }
+  await assert.rejects(r.withNode('transcribe', 'family', (n) => { calls += 1; return client.transcribe(n, Readable.from(broken2()), { mime: 'audio/webm' }); }), /vault decrypt failed/);
+  assert.equal(calls, 1);
+  assert.ok(r.status().every((s) => s.healthy));
+  await fake.close();
+});
+
+test('health: succeeds against a live node and fails with nodeFailure otherwise', async () => {
+  const fake = await startFakeNode();
+  assert.equal(await client.health(asNode(fake)), undefined);
+  fake.state.failStatus = 503;
+  await assert.rejects(client.health(asNode(fake)), (e) => e.nodeFailure === true);
+  await fake.close();
+});
+
+test('registry: cool-down starts when the node FAILED, not when the call started', async () => {
+  const good = await startFakeNode();
+  let t = 1000;
+  const r = reg([nodeCfg(good, { name: 'a', priority: 10 }), nodeCfg(good, { name: 'b', priority: 20 })], { now: () => t, retryAfterMs: 30_000 });
+  const tried = [];
+  await r.withNode('embed', 'family', async (n) => {
+    tried.push(n.name);
+    if (n.name === 'a') { t += 45 * 60_000; throw new client.NodeError('a died after a long call', true); }
+    return n.name;
+  });
+  assert.deepEqual(tried, ['a', 'b']);
+  tried.length = 0;
+  await r.withNode('embed', 'family', async (n) => { tried.push(n.name); return n.name; });
+  assert.deepEqual(tried, ['b'], 'a is still cooling down relative to now');
+  t += 31_000;
+  await r.withNode('embed', 'family', async (n) => { tried.push(n.name); return n.name; });
+  assert.deepEqual(tried, ['b', 'a']);
+  await good.close();
+});
+
+test('registry: privacy gate fails closed on unknown values and non-boolean local', async () => {
+  const fake = await startFakeNode();
+  const r = reg([nodeCfg(fake, { name: 'nas', local: true })]);
+  for (const bad of [undefined, null, 'Private', 'public', '', 1, true]) {
+    let called = false;
+    await assert.rejects(r.withNode('embed', bad, async () => { called = true; }), (e) => e instanceof TypeError && /unknown privacy value/.test(e.message));
+    assert.equal(called, false);
+    assert.throws(() => r.eligible('embed', bad), TypeError);
+    assert.throws(() => r.hasEligible('embed', bad), TypeError);
+  }
+  assert.equal(r.hasEligible('embed', 'private'), true);
+  assert.equal(r.hasEligible('embed', 'family'), true);
+  const sneaky = reg([nodeCfg(fake, { name: 'x', local: 'false' }), nodeCfg(fake, { name: 'y', local: 1, priority: 2 }), nodeCfg(fake, { name: 'z', local: undefined, priority: 3 })]);
+  assert.equal(sneaky.hasEligible('embed', 'private'), false);
+  assert.equal(sneaky.hasEligible('embed', 'family'), true);
+  await assert.rejects(sneaky.withNode('embed', 'private', async () => 1), NoEligibleNode);
+  await fake.close();
+});

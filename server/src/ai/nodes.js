@@ -4,7 +4,7 @@ const { NoEligibleNode, NodeUnavailable } = require('./errors');
 
 /**
  * Knows which nodes exist and who may use them. THE privacy choke point:
- * privacy === 'private' only ever matches nodes flagged `local`.
+ * privacy === 'private' only ever matches nodes with `local === true`; unknown privacy values throw.
  */
 class NodeRegistry {
   constructor(nodes, { now = Date.now, retryAfterMs = 30_000 } = {}) {
@@ -14,8 +14,10 @@ class NodeRegistry {
   }
 
   eligible(capability, privacy) {
+    // Fail closed: anything but the two known values is a caller bug, never silently treated as "family".
+    if (privacy !== 'family' && privacy !== 'private') throw new TypeError('unknown privacy value');
     return this.nodes
-      .filter((n) => n.capabilities.includes(capability) && (privacy !== 'private' || n.local))
+      .filter((n) => n.capabilities.includes(capability) && (privacy !== 'private' || n.local === true))
       .sort((a, b) => a.priority - b.priority);
   }
 
@@ -44,9 +46,10 @@ class NodeRegistry {
         n.lastError = '';
         return out;
       } catch (e) {
+        // A non-node error (e.g. HTTP 400/401, or a failing source stream) deliberately aborts: retrying elsewhere cannot fix it.
         if (!e || e.nodeFailure !== true) throw e;
         n.healthy = false;
-        n.failedAt = t;
+        n.failedAt = this.now(); // when it failed, not when the call started: a 45-minute call must not skip its cool-down
         n.lastError = e.message;
         last = e;
       }
