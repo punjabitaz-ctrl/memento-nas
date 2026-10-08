@@ -15,6 +15,7 @@ function fakeEmbed(text, dim = 64) {
 /**
  * Minimal OpenAI-compatible node. state.failStatus forces an error status;
  * state.transcribe(bodyBuffer), state.embed(text), state.chat(messages) override the defaults.
+ * state.gate (a Promise) holds transcription responses until it settles.
  */
 function startFakeNode(initial = {}) {
   const calls = [];
@@ -32,9 +33,14 @@ function startFakeNode(initial = {}) {
       if (state.failStatus) return send(state.failStatus, { error: 'forced failure' });
       if (req.method === 'GET' && req.url === '/v1/models') return send(200, { data: [] });
       if (req.url === '/v1/audio/transcriptions') {
-        return send(200, state.transcribe
+        const respond = () => send(200, state.transcribe
           ? state.transcribe(body)
           : { text: 'hello world', language: 'en', segments: [{ start: 0, end: 1, text: 'hello world' }] });
+        // Optional gate: while state.gate is a pending Promise the response is held back, so a test
+        // can observe the "in progress" state deterministically. Undefined gate = respond at once.
+        const gate = state.gate;
+        if (gate) { Promise.resolve(gate).then(respond, respond).catch(() => {}); return; }
+        return respond();
       }
       if (req.url === '/v1/embeddings') {
         const { input } = JSON.parse(body.toString());
