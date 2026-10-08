@@ -1,45 +1,37 @@
-version: "3.9"
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Memento — Primary Docker Compose
-# Usage:
-#   1. cp .env.example .env && nano .env     # set MEMENTO_KEY etc.
-#   2. docker compose up -d --build
-#   3. Open http://<your-nas-ip>:3002
-# ─────────────────────────────────────────────────────────────────────────────
+# Memento v2.0 NAS Edition: primary Docker Compose
+#
+#   1. sh generate-key.sh              # creates .env with a fresh MEMENTO_KEY + SESSION_SECRET
+#   2. set MEMENTO_DATA in .env        # e.g. /volume1/docker/memento (Synology) or /share/Container/memento (QNAP)
+#   3. docker compose up -d --build
+#   4. open http://<nas-ip>:3002       # first visit shows the owner setup screen
+#
+# Everything lives in ONE folder (MEMENTO_DATA): db/ vault/ sessions/ tmp/.
+# Back that folder up together with your MEMENTO_KEY.
 
 services:
   memento:
     build:
       context: .
       dockerfile: Dockerfile
+    image: memento-nas:2.0.0
     container_name: memento
-
-    # Read environment from .env file
     env_file: .env
 
+    # Run as the user that owns MEMENTO_DATA. On Synology/QNAP set PUID/PGID in .env
+    # to the owner of the folder (find it with `ls -ln <folder>`); default is the image's "node" user.
+    user: "${PUID:-1000}:${PGID:-1000}"
+
     ports:
-      # HOST_PORT maps to container port 3002.
-      # Change HOST_PORT in .env if 3002 conflicts with another service.
       - "${HOST_PORT:-3002}:3002"
 
     volumes:
-      # ── Persistent volumes (include both in your NAS backup plan) ────────
-      - memento-db:/data/db         # SQLite database
-      - memento-vault:/data/vault   # AES-256 encrypted media files
-      - memento-sessions:/data/sessions # Session store
+      - ${MEMENTO_DATA:-./data}:/data
 
     restart: unless-stopped
 
-    # Resource limits — tune for your NAS
-    # Minimum: 256MB RAM. Recommended: 512MB.
-    deploy:
-      resources:
-        limits:
-          cpus: '1.0'
-          memory: 512M
-        reservations:
-          memory: 128M
+    # Recommended: 512 MB. Memory use is flat even for multi-GB videos because files stream in 64 KiB chunks.
+    mem_limit: 512m
+    cpus: 1.0
 
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:3002/health"]
@@ -48,7 +40,7 @@ services:
       retries: 3
       start_period: 30s
 
-    # Graceful shutdown — gives the app 30s to close SQLite cleanly
+    # Gives the server time to finish in-flight uploads and close SQLite cleanly.
     stop_grace_period: 30s
 
     logging:
@@ -56,11 +48,3 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-
-volumes:
-  memento-db:
-    name: memento-db
-  memento-vault:
-    name: memento-vault
-  memento-sessions:
-    name: memento-sessions

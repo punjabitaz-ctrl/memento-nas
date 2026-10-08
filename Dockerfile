@@ -23,7 +23,7 @@ WORKDIR /build/server
 COPY server/package*.json ./
 
 # --build-from-source ensures compilation for the target architecture
-RUN npm ci --build-from-source
+RUN npm ci --build-from-source --omit=dev
 
 COPY server/ ./
 
@@ -46,6 +46,8 @@ COPY --from=server-builder --chown=node:node /build/server/ ./
 
 # Copy compiled frontend into the location the server expects
 COPY --from=client-builder --chown=node:node /build/client/dist ./client/dist
+
+ENV NODE_ENV=production DATA_DIR=/data PORT=3002
 
 USER node
 

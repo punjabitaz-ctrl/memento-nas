@@ -31,14 +31,11 @@ else
   exit 1
 fi
 
-echo "Add these to your .env file:"
-echo ""
-echo "MEMENTO_KEY=${MEMENTO_KEY}"
-echo "SESSION_SECRET=${SESSION_SECRET}"
-echo ""
-echo "⚠️  SAVE MEMENTO_KEY in a safe place (password manager, printed paper)."
-echo "    If you lose it, your vault is permanently unreadable."
-echo ""
+if [ -f ".env" ] && ! grep -q "REPLACE_WITH" .env 2>/dev/null; then
+  echo "A .env with real keys already exists. Not touching it."
+  echo "(Replacing MEMENTO_KEY on a vault that has data would make that data unreadable.)"
+  exit 0
+fi
 
 # Optionally write to .env if it doesn't exist yet
 if [ ! -f ".env" ] && [ -f ".env.example" ]; then
@@ -47,7 +44,21 @@ if [ ! -f ".env" ] && [ -f ".env.example" ]; then
   if command -v perl >/dev/null 2>&1; then
     perl -i -pe "s|REPLACE_WITH_YOUR_64_CHAR_HEX_KEY|${MEMENTO_KEY}|g" .env
     perl -i -pe "s|REPLACE_WITH_ANOTHER_RANDOM_STRING|${SESSION_SECRET}|g" .env
-    echo "✅  .env file created and keys filled in automatically."
-    echo "    Review and edit HOST_PORT or ANTHROPIC_API_KEY as needed."
+    chmod 600 .env 2>/dev/null || true
+    echo "✅  .env created with fresh keys."
+    echo ""
+    echo "Your encryption key (MEMENTO_KEY):"
+    echo "    ${MEMENTO_KEY}"
+    echo ""
+    echo "⚠️  SAVE IT NOW in a password manager AND print a copy."
+    echo "    Lose it and the vault can never be opened again, by anyone."
+    echo "    Next: set MEMENTO_DATA (and PUID/PGID on a NAS) in .env, then: docker compose up -d --build"
+  else
+    echo "perl not found: edit .env by hand with:"
+    echo "MEMENTO_KEY=${MEMENTO_KEY}"
+    echo "SESSION_SECRET=${SESSION_SECRET}"
   fi
+else
+  echo "No .env.example found: run this from the memento-nas folder."
+  exit 1
 fi

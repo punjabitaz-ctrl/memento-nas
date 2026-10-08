@@ -1,99 +1,62 @@
-# Memento — Security Architecture
+# Security model: Memento NAS Edition v2.0
 
-## Encryption
+## What is protected
 
-All media files and documents are encrypted **before** being written to disk using **AES-256-GCM** — the same algorithm used by Signal, WhatsApp, and TLS 1.3.
-
-### How it works
-
-```
-Upload flow:
-  Browser → [HTTPS/LAN] → Server (RAM only) → AES-256-GCM encrypt → /data/vault/<uuid>.enc
-
-Serve flow:
-  Browser ← [HTTPS/LAN] ← Server (streams decrypt) ← /data/vault/<uuid>.enc
-```
-
-- The plaintext file **never touches disk** except the one-time write during upload (temp file → encrypt → delete temp)
-- Media is decrypted **in memory (streaming)** directly to the HTTP response — no cleartext is written to disk when viewing
-- Each file gets a **random 96-bit IV** (initialization vector), so two identical files produce different ciphertext
-- A **128-bit GCM authentication tag** appended to each file detects any tampering or corruption
-
-### Encrypted format
-
-```
-[ 12 bytes IV ] [ encrypted content ] [ 16 bytes GCM auth tag ]
-```
-
-### Your key (`MEMENTO_KEY`)
-
-- 256-bit AES key stored as a 64-character hex string
-- Loaded from the `MEMENTO_KEY` environment variable — **never stored in the database**
-- The database contains **only encrypted file paths** (like `abc123.enc`) — not the key
-- If someone steals your NAS hard drive or Docker volumes, they get nothing without the key
-
----
-
-## Authentication
-
-- Session-based auth with bcrypt password hashing (cost factor 12)
-- Sessions stored in a separate SQLite database; persisted across container restarts
-- Session cookies: `HttpOnly`, `SameSite=Lax`, 30-day expiry
-- Set `TRUST_PROXY=true` + a proper reverse proxy for `Secure` cookies over HTTPS
-- One vault = one account (family vault model); no multi-tenancy in v1
-
----
-
-## Data Stays Local
-
-**By default, no data leaves your machine.** AI organizing runs via local heuristics.
-
-If you set `ANTHROPIC_API_KEY`:
-- Only the **single item being added** is sent to Anthropic (title, note, filename, and optionally a ≤2MB image crop)
-- No bulk batch processing, no background scanning of your vault
-- The AI call is opt-in per deployment, not per item
-
----
-
-## What's NOT encrypted
-
-The **database** (`memento.sqlite`) stores metadata: titles, notes, dates, people, tags, summaries. This metadata is **not encrypted at rest** in v2.0. A future version may add field-level metadata encryption.
-
-For maximum protection, place the Docker volume on an encrypted NAS volume (Synology SHR with encryption, VeraCrypt, LUKS, etc.).
-
----
-
-## Key Management
-
-```
-MEMENTO_KEY is your vault.
-Lose the key = lose access to every file. Forever.
-```
-
-Recommended backup strategy:
-1. Print the key and store in a fireproof safe
-2. Add to a reputable password manager (1Password, Bitwarden)
-3. Write on a physical medium stored in a different physical location
-4. Consider a sealed envelope with a trusted person for estate purposes
-
-**Do NOT** store the key in the same Docker volume as your vault.
-
----
-
-## Threat Model
-
-| Threat | Protected? | Notes |
+| Data | At rest | Notes |
 |---|---|---|
-| NAS drive theft | ✅ Yes | AES-256-GCM encrypted vault |
-| Docker volume snapshot | ✅ Yes | Without MEMENTO_KEY, files are unreadable |
-| Database file access | ⚠️ Partial | Metadata (titles, notes) not encrypted |
-| Network eavesdropping (LAN) | ⚠️ Use HTTPS | Enable reverse proxy + TLS for remote access |
-| Compromised container | ❌ No | Key is in env; if container is compromised, key is exposed |
-| Weak password | ❌ No | Use a strong password; bcrypt slows brute force |
-| Lost key | ❌ No | Vault is permanently unreadable |
+| Uploaded files and recordings | **AES-256-GCM encrypted** | One `.enc` file per upload in `vault/` |
+| Titles, descriptions, story text, dates, tags, people | **Not encrypted** | SQLite (`db/memento.sqlite`) so it can be searched. Use NAS volume encryption to cover it |
+| Passwords | bcrypt (cost 12) | Never stored or logged in plain text |
+| Sessions | Server-side, separate `sessions.sqlite` | Cookie `memento.sid`: httpOnly, SameSite=Lax, Secure when served over HTTPS |
 
----
+## Vault file format ("MEM2")
 
-## Reporting Issues
+- 4-byte magic + 16-byte random salt, then 64 KiB chunks, each with its own 16-byte GCM tag
+- Per-file key = HKDF-SHA256(`MEMENTO_KEY`, salt, "memento-file-v2")
+- Nonce = chunk counter; AAD = final-chunk flag + record id. This detects tampering, truncation, reordering and swapping one file for another
+- Files stream through encryption: plaintext is **never written to disk** (upload → encrypt → `.part` → rename). Memory use stays flat regardless of file size
+- Playback decrypts and verifies on the fly, including HTTP Range requests (seeking video/audio). An integrity failure aborts the response rather than serving bad data
 
-This is a personal/family use project. Security concerns: open a GitHub issue marked `[security]`.
+## Key handling
+
+- `MEMENTO_KEY` (64 hex chars) lives only in your `.env`; it is never stored in the database
+- A key check value is stored in the database; the server refuses to start with a different key
+- The server refuses placeholder or malformed keys and short session secrets
+- **Losing the key means permanent data loss.** There is no recovery
+
+## Access control
+
+- Roles: **owner** (everything, manages family), **contributor** (add/edit own), **viewer** (read only)
+- A memory is `family` (all members) or `private` (only its author, not even the owner)
+- Owners cannot demote or remove the last owner. Disabled members are signed out immediately
+- Login rate-limited (10 attempts / 15 min); response time is equalised for unknown users
+- Password reset is done from the NAS shell (`scripts/reset-password.js`), i.e. requires physical/SSH admin access
+
+## Web hardening
+
+- CSRF: every state-changing request needs `X-Requested-With: memento` and a same-origin `Origin`
+- Helmet CSP (self only; no third-party scripts, fonts, analytics or CDNs; fonts are bundled)
+- Uploaded media is served with `nosniff` and `Content-Security-Policy: sandbox`; SVG uploads are rejected
+- Container runs as a non-root user; request logs record method and path only
+
+## Network
+
+Memento speaks plain HTTP on port 3002 and expects you to terminate TLS in a reverse proxy or VPN if you need access beyond your LAN. Don't expose it directly to the internet. HSTS is left to the proxy.
+
+## Optional cloud (Claude)
+
+Disabled unless `ANTHROPIC_API_KEY` is set, and then used only when a user ticks "Ask Claude" on a specific memory. Only that memory's text is sent. Files and audio are never sent.
+
+## Exports
+
+The zip export is **unencrypted** by design (so your family can read it without Memento). It excludes other people's private memories. Store it accordingly.
+
+## Not covered
+
+- An attacker with both the NAS disk and your `.env` can decrypt everything
+- Anyone who can read the SQLite file can read titles and text
+- No audit log, 2FA or email-based recovery
+
+## Reporting issues
+
+Open a GitHub issue (no secrets or personal data) or contact the maintainer directly for anything sensitive.

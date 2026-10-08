@@ -1,236 +1,111 @@
-# Memento v2.0 — NAS Edition
+# Memento: NAS Edition (v2.0)
 
-> A privacy-first AI memory vault. Self-hosted on your NAS. Your family's lifetime of photos, audio, documents, and stories — encrypted, searchable, narratable, always owned by you.
+A private, encrypted vault for your family's stories, voices, photos and documents. It runs on **your** NAS in a single Docker container. Nothing is sent to the cloud unless you explicitly ask for it.
 
----
+- **Record or write** stories (prompted by 149 built-in questions, or your own)
+- **Upload** photos, scans, video, audio and documents. Every file is encrypted before it touches the disk
+- **Browse** by timeline, person, tag, or full-text search; spot the decades with no stories yet
+- **Share with family** using separate accounts (owner / contributor / view-only) and three simple layouts (elder, archivist, explorer)
+- **Private by default option:** mark any memory *private* and even the vault owner can't see it
+- **Take it with you:** one-click zip export of everything
 
-## What it does
-
-- **Ingest** photos, videos, audio, documents, and written notes
-- **Encrypt** every file at rest with AES-256-GCM using your key
-- **Auto-organize** with AI tags, summaries, people, and date detection (offline heuristics by default; Claude API optional)
-- **Timeline** — browse memories grouped by year
-- **Search** — full-text across titles, notes, tags, people, places, and AI summaries
-- **Narrate** — type a name or year, get a short story woven from your memories
-- **Export** — one click produces a plain zip of all decrypted files for estate handover
+Stack: Node 20, Express, SQLite (WAL + FTS5), React 18. Runs in about 150 MB RAM.
 
 ---
 
-## Requirements
+## 1. Install on your NAS
 
-- Docker + Docker Compose (v2+)
-- NAS with at least **256MB RAM free** (512MB recommended)
-- **ARM64** (Synology ARM, QNAP, RPi) or **AMD64** (Intel/AMD) — both supported
-
----
-
-## Quickstart (5 minutes)
-
-### 1. Generate your encryption key
+You need Docker (Synology *Container Manager*, QNAP *Container Station*, or plain Docker) and SSH or a terminal.
 
 ```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-# Outputs something like: a3f8c12e...
-```
+git clone https://github.com/punjabitaz-ctrl/memento-nas.git
+cd memento-nas
 
-Or, if Node isn't on your machine, use the NAS terminal / Docker exec into any node container.
+sh generate-key.sh          # writes .env with a fresh MEMENTO_KEY + SESSION_SECRET
+nano .env                   # set MEMENTO_DATA, PUID, PGID (see below)
 
-> ⚠️ **This key is your vault.** Back it up in a password manager, a printed paper in a safe, or a USB drive kept separately. Losing it makes every file permanently unreadable.
-
-### 2. Configure
-
-```bash
-cp .env.example .env
-nano .env
-```
-
-At minimum, set:
-```
-MEMENTO_KEY=<your 64-char hex key>
-SESSION_SECRET=<another random hex string>
-HOST_PORT=3002
-```
-
-### 3. Deploy
-
-```bash
+mkdir -p /volume1/docker/memento        # whatever you set as MEMENTO_DATA
 docker compose up -d --build
 ```
 
-The first build takes 3–8 minutes (compiles native SQLite bindings for your architecture).
-Subsequent restarts take 5 seconds.
+Open `http://<nas-ip>:3002`. The first visit shows the owner setup screen.
 
-### 4. Open
+### Settings that matter on a NAS
 
-```
-http://<your-nas-ip>:3002
-```
-
-On first visit, you'll be prompted to create your account. After that, login is required.
-
----
-
-## NAS-specific instructions
-
-### Synology DSM (Container Manager)
-
-1. Open **Container Manager** → **Project** → **Create**
-2. Choose **Create from YAML**, paste the contents of `docker-compose.yml`
-3. Or use the file upload: place the entire `memento/` folder in a shared folder, then set the path
-4. Set your `.env` values in the environment section of the wizard
-
-Alternatively, SSH into your NAS and run:
-```bash
-cd /volume1/docker/memento
-docker compose up -d --build
-```
-
-### QNAP Container Station
-
-1. SSH to your QNAP or use Container Station → **Create** → **Upload Docker Compose**
-2. Place the project folder in `/share/CACHEDEV1_DATA/Container/memento/`
-3. `docker compose up -d --build`
-
-### Unraid
-
-1. Install the **Docker Compose Manager** plugin
-2. Create a new compose project, paste `docker-compose.yml`
-3. Set variables in the compose template
-
-### Reverse proxy (Nginx Proxy Manager / Synology's built-in proxy)
-
-Set in `.env`:
-```
-TRUST_PROXY=true
-```
-
-Then configure your reverse proxy to point to `http://localhost:3002`.
-
-For **Traefik**, use `docker-compose.traefik.yml` instead:
-```bash
-docker compose -f docker-compose.traefik.yml up -d --build
-```
-
----
-
-## Backup strategy
-
-Memento uses three named Docker volumes:
-
-| Volume | Contents | Include in backup |
-|---|---|---|
-| `memento-vault` | AES-256 encrypted media files | ✅ Yes |
-| `memento-db` | SQLite database (metadata) | ✅ Yes |
-| `memento-sessions` | Login sessions | Optional |
-
-**On Synology:** Use **Hyper Backup** → Backup Docker volumes `memento-vault` and `memento-db`.
-
-**With rsync:**
-```bash
-# Find volume paths
-docker volume inspect memento-vault --format '{{ .Mountpoint }}'
-docker volume inspect memento-db --format '{{ .Mountpoint }}'
-
-# Rsync to external location
-rsync -av /var/lib/docker/volumes/memento-vault/ /backup/memento-vault/
-rsync -av /var/lib/docker/volumes/memento-db/   /backup/memento-db/
-```
-
-> ⚠️ Back up your `MEMENTO_KEY` separately from the vault files. A backup of both without the key is worthless.
-
----
-
-## Updates
-
-```bash
-cd /path/to/memento
-git pull  # or download new release
-docker compose up -d --build
-```
-
-Data volumes are preserved across updates. The build step recompiles if needed.
-
----
-
-## Enable AI (optional)
-
-By default, Memento runs fully offline — no data leaves your machine.
-
-To enable richer AI summaries and photo understanding:
-
-1. Get an Anthropic API key at [console.anthropic.com](https://console.anthropic.com)
-2. Add to `.env`:
-   ```
-   ANTHROPIC_API_KEY=sk-ant-...
-   MEMENTO_AI_MODEL=claude-haiku-4-5-20251001
-   ```
-3. Restart: `docker compose up -d`
-
-Only the item being added is sent per request. No bulk processing, no background calls.
-
----
-
-## Stack
-
-| Layer | Technology |
+| `.env` setting | What to put |
 |---|---|
-| Backend | Node.js 20 · Express 4 · better-sqlite3 9 |
-| Encryption | AES-256-GCM (Node crypto, streaming) |
-| Sessions | express-session + connect-sqlite3 |
-| Frontend | React 18 · React Router 6 · Vite 5 |
-| Container | Alpine Linux · tini (PID 1) |
-| Database | SQLite (WAL mode) + FTS5 full-text search |
+| `MEMENTO_DATA` | Folder for all data. Synology `/volume1/docker/memento`, QNAP `/share/Container/memento` |
+| `PUID` / `PGID` | Numeric owner of that folder (`ls -ln /volume1/docker`). Often `1026:100` on Synology. Wrong values give a "permission denied" error in the logs |
+| `HOST_PORT` | Change if 3002 is taken |
+| `MAX_FILE_SIZE_MB` | Per-file upload limit (default 500) |
+| `TRUST_PROXY` | `true` when behind a reverse proxy |
+| `ANTHROPIC_API_KEY` | Optional, see "Claude" below |
+
+The container refuses to start with a clear message if the key is a placeholder, malformed, or **different from the key the vault was created with** (so a typo can't silently lock you out).
+
+### TrueNAS (the reference target for this project)
+
+Short version; the working, tested steps are tracked in `docs/SPRINTS.md` (Sprint 0) and `docs/KNOWLEDGE_BASE.md` §4.
+
+1. Create a dataset such as `<pool>/apps/memento` (Apps preset, **no ACL**) and make it owned by the user the container runs as (TrueNAS's generic apps user is `568`).
+2. In `.env`: `MEMENTO_DATA=/mnt/<pool>/apps/memento`, `PUID=568`, `PGID=568`.
+3. Build or pull the image, then run via `docker compose` over SSH, or paste a compose without `build:` into Apps → Install via YAML.
+4. For HTTPS (needed for voice recording), use Tailscale (`tailscale serve`).
+
+### Voice recording needs HTTPS
+
+Browsers only allow microphone access on `https://` or `localhost`. On plain `http://<nas-ip>:3002` the Record page tells people so and offers upload instead. To enable it, put Memento behind HTTPS and set `TRUST_PROXY=true`:
+
+- **Synology:** Control Panel → Login Portal → Advanced → Reverse Proxy → `https://memento.<your-ddns>` → `http://localhost:3002`
+- **Tailscale:** `tailscale serve --bg 3002` gives you a private `https://<nas>.<tailnet>.ts.net`
+- **Nginx Proxy Manager / Traefik:** `docker-compose.traefik.yml` is included; set `MEMENTO_DOMAIN` and `TRUST_PROXY=true`
+
+Don't forward port 3002 straight to the internet. Use a VPN (Tailscale / WireGuard) or an HTTPS reverse proxy.
 
 ---
 
-## Troubleshooting
+## 2. Back it up (important)
 
-**Build fails on ARM64 (native module error)**
-The Dockerfile installs `python3 make g++` for native compilation. If it still fails, try:
+Back up **both**, together:
+
+1. The `MEMENTO_DATA` folder (`db/`, `vault/`; `sessions/` and `tmp/` are optional)
+2. Your **`MEMENTO_KEY`**, stored *separately* from the NAS (password manager + a printed copy)
+
+Without the key the vault is unreadable by design. Without the folder there is nothing to decrypt. A backup of the folder is safe to keep on an external drive or cloud storage because the files are encrypted. Note that the SQLite database (titles, dates, tags, people names, story text) is **not** encrypted; see SECURITY.md.
+
+Take the owner's **Export** (Help & backup page) occasionally as well. It produces a plain zip of everything you can see, readable without Memento.
+
+## 3. Everyday operations
+
 ```bash
-docker compose build --no-cache
+docker compose logs -f memento              # logs
+git pull && docker compose up -d --build   # update
+docker exec -it memento node scripts/reset-password.js --list
+docker exec -it memento node scripts/reset-password.js <login> 'new long password'
 ```
 
-**Port already in use**
-Change `HOST_PORT` in `.env` and restart.
+Family members are created by the owner on the **Family** page (no email needed). The last owner can't be removed or demoted.
 
-**Forgot password**
-SSH to your NAS, exec into the container, and reset:
-```bash
-docker exec -it memento sh
-# Inside container:
-node -e "
-  const db = require('better-sqlite3')('/data/db/memento.sqlite');
-  const bcrypt = require('bcryptjs');
-  const hash = bcrypt.hashSync('newpassword', 12);
-  db.prepare('UPDATE users SET password_hash = ?').run(hash);
-  console.log('Password reset to: newpassword');
-"
+## 4. Claude (optional)
+
+With no `ANTHROPIC_API_KEY`, the "Tidy up" button uses a built-in offline organizer to suggest tags, people, a date and a summary, and "Tell the story" builds a narrative from stored text, all on your NAS.
+
+If you set a key, each memory gets an **"Ask Claude"** checkbox. Only the text of that one memory is sent, only when ticked, and never files. Audio is not transcribed (type the transcript yourself).
+
+## 5. What's inside
+
+```
+server/   Express API, AES-256-GCM vault, SQLite, tests (npm test)
+client/   React app (Vite); built into client/dist and served by the server
+Dockerfile, docker-compose.yml, docker-compose.traefik.yml, .env.example, generate-key.sh
 ```
 
-**Check logs**
-```bash
-docker compose logs -f memento
-```
+Development: `cd server && npm i && npm test`; `cd client && npm i && npm run dev` (proxies to a server on :3002).
 
-**Health check**
-```bash
-curl http://localhost:3002/health
-# {"status":"ok","version":"2.0.0","time":"..."}
-```
+## 6. Known limits
 
----
-
-## Privacy model
-
-| Concern | How Memento handles it |
-|---|---|
-| Data location | Runs on hardware you control. No cloud dependency. |
-| Encryption at rest | Every file encrypted with AES-256-GCM. Database stores metadata only. |
-| AI mode | Offline by default. Claude API is opt-in, per-item, never bulk. |
-| Authentication | Session-based login. No anonymous access. |
-| Export | One-click full decrypted zip. Your data is never held hostage. |
-
----
-
-*Memento v2.0 — built for one family, designed to last.*
+- Voice recordings aren't transcribed automatically
+- No comments/reactions or book printing yet
+- Thumbnails aren't generated, so large photos load at full size; HEIC/RAW won't preview in browsers (downloads work)
+- Tested on x86-64; the Dockerfile targets arm64 too but that build is untested
+- Memory/search metadata is not encrypted at rest (full-disk encryption on the NAS volume is recommended)

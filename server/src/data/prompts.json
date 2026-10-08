@@ -1,0 +1,747 @@
+[
+ {
+  "text": "What is your earliest childhood memory?",
+  "category": "childhood",
+  "lifeStage": "early_childhood"
+ },
+ {
+  "text": "Tell us about the house you grew up in.",
+  "category": "childhood",
+  "lifeStage": "childhood"
+ },
+ {
+  "text": "What games did you play as a child?",
+  "category": "childhood",
+  "lifeStage": "childhood"
+ },
+ {
+  "text": "Who was your best friend growing up?",
+  "category": "childhood",
+  "lifeStage": "childhood"
+ },
+ {
+  "text": "What did you want to be when you grew up?",
+  "category": "childhood",
+  "lifeStage": "childhood"
+ },
+ {
+  "text": "Describe a typical Sunday in your childhood home.",
+  "category": "childhood",
+  "lifeStage": "childhood"
+ },
+ {
+  "text": "What was your favorite toy?",
+  "category": "childhood",
+  "lifeStage": "early_childhood"
+ },
+ {
+  "text": "Tell us about your siblings and what you did together.",
+  "category": "childhood",
+  "lifeStage": "childhood"
+ },
+ {
+  "text": "What rules did your parents have that you found unfair?",
+  "category": "childhood",
+  "lifeStage": "childhood"
+ },
+ {
+  "text": "What was the neighborhood like where you grew up?",
+  "category": "childhood",
+  "lifeStage": "childhood"
+ },
+ {
+  "text": "Tell us about your favorite teacher and why they made an impact.",
+  "category": "education",
+  "lifeStage": "childhood"
+ },
+ {
+  "text": "What subject did you excel at in school?",
+  "category": "education",
+  "lifeStage": "teenage"
+ },
+ {
+  "text": "Describe your high school experience.",
+  "category": "education",
+  "lifeStage": "teenage"
+ },
+ {
+  "text": "What extracurricular activities were you involved in?",
+  "category": "education",
+  "lifeStage": "teenage"
+ },
+ {
+  "text": "Tell us about your college years or what you did after high school.",
+  "category": "education",
+  "lifeStage": "young_adult"
+ },
+ {
+  "text": "What's the most important lesson you learned in school?",
+  "category": "education",
+  "lifeStage": "teenage"
+ },
+ {
+  "text": "Did you have any mentors who shaped your path?",
+  "category": "education",
+  "lifeStage": "young_adult"
+ },
+ {
+  "text": "What was your first day of school like?",
+  "category": "education",
+  "lifeStage": "early_childhood"
+ },
+ {
+  "text": "Tell us about your first job.",
+  "category": "career",
+  "lifeStage": "teenage"
+ },
+ {
+  "text": "How did you choose your career path?",
+  "category": "career",
+  "lifeStage": "young_adult"
+ },
+ {
+  "text": "What's the proudest moment in your professional life?",
+  "category": "career",
+  "lifeStage": "adult"
+ },
+ {
+  "text": "Tell us about a difficult work situation and how you handled it.",
+  "category": "career",
+  "lifeStage": "adult"
+ },
+ {
+  "text": "Who had the biggest influence on your career?",
+  "category": "career",
+  "lifeStage": "young_adult"
+ },
+ {
+  "text": "What advice would you give someone starting in your field?",
+  "category": "career",
+  "lifeStage": "senior"
+ },
+ {
+  "text": "Describe a typical day at work during your career.",
+  "category": "career",
+  "lifeStage": "adult"
+ },
+ {
+  "text": "What job did you dream of having?",
+  "category": "career",
+  "lifeStage": "childhood"
+ },
+ {
+  "text": "Tell us about how you met your spouse/partner.",
+  "category": "family",
+  "lifeStage": "young_adult"
+ },
+ {
+  "text": "What was your wedding day like?",
+  "category": "family",
+  "lifeStage": "young_adult"
+ },
+ {
+  "text": "Describe the day your first child was born.",
+  "category": "family",
+  "lifeStage": "adult"
+ },
+ {
+  "text": "What family traditions did you create?",
+  "category": "family",
+  "lifeStage": "adult"
+ },
+ {
+  "text": "Tell us about your parents and what they were like.",
+  "category": "family",
+  "lifeStage": "childhood"
+ },
+ {
+  "text": "What do you most want your grandchildren to know?",
+  "category": "family",
+  "lifeStage": "senior"
+ },
+ {
+  "text": "Share a favorite memory with your extended family.",
+  "category": "family",
+  "lifeStage": "adult"
+ },
+ {
+  "text": "What values were most important in your family?",
+  "category": "family",
+  "lifeStage": "adult"
+ },
+ {
+  "text": "Tell us about family reunions or gatherings.",
+  "category": "family",
+  "lifeStage": "adult"
+ },
+ {
+  "text": "Tell us about your first crush or love.",
+  "category": "love",
+  "lifeStage": "teenage"
+ },
+ {
+  "text": "What's the most romantic thing you've done or that was done for you?",
+  "category": "love",
+  "lifeStage": "young_adult"
+ },
+ {
+  "text": "How did you know you found 'the one'?",
+  "category": "love",
+  "lifeStage": "young_adult"
+ },
+ {
+  "text": "What's your secret to a lasting relationship?",
+  "category": "love",
+  "lifeStage": "senior"
+ },
+ {
+  "text": "Describe a memorable date.",
+  "category": "love",
+  "lifeStage": "young_adult"
+ },
+ {
+  "text": "What love lessons would you share with young people?",
+  "category": "love",
+  "lifeStage": "senior"
+ },
+ {
+  "text": "How did your family celebrate holidays?",
+  "category": "traditions",
+  "lifeStage": "childhood"
+ },
+ {
+  "text": "What's a recipe that's been passed down in your family?",
+  "category": "traditions",
+  "lifeStage": "adult"
+ },
+ {
+  "text": "Tell us about your favorite holiday memory.",
+  "category": "traditions",
+  "lifeStage": "childhood"
+ },
+ {
+  "text": "What cultural or religious traditions were important to your family?",
+  "category": "traditions",
+  "lifeStage": "childhood"
+ },
+ {
+  "text": "Describe how birthdays were celebrated in your family.",
+  "category": "traditions",
+  "lifeStage": "childhood"
+ },
+ {
+  "text": "What traditions have you passed on to your children?",
+  "category": "traditions",
+  "lifeStage": "adult"
+ },
+ {
+  "text": "Tell us about a special family ritual.",
+  "category": "traditions",
+  "lifeStage": "adult"
+ },
+ {
+  "text": "What's the best advice you've ever received?",
+  "category": "wisdom",
+  "lifeStage": "senior"
+ },
+ {
+  "text": "What do you know now that you wish you knew at 20?",
+  "category": "wisdom",
+  "lifeStage": "senior"
+ },
+ {
+  "text": "What would you tell your younger self?",
+  "category": "wisdom",
+  "lifeStage": "senior"
+ },
+ {
+  "text": "What's the most important life lesson you've learned?",
+  "category": "wisdom",
+  "lifeStage": "senior"
+ },
+ {
+  "text": "How has your perspective on life changed over the years?",
+  "category": "wisdom",
+  "lifeStage": "senior"
+ },
+ {
+  "text": "What do you believe is the key to happiness?",
+  "category": "wisdom",
+  "lifeStage": "senior"
+ },
+ {
+  "text": "What values do you hold most dear?",
+  "category": "wisdom",
+  "lifeStage": "adult"
+ },
+ {
+  "text": "What would you want written on your tombstone?",
+  "category": "wisdom",
+  "lifeStage": "senior"
+ },
+ {
+  "text": "Tell us about graduating from high school or college.",
+  "category": "milestones",
+  "lifeStage": "teenage"
+ },
+ {
+  "text": "Describe buying your first home.",
+  "category": "milestones",
+  "lifeStage": "young_adult"
+ },
+ {
+  "text": "What was your proudest accomplishment?",
+  "category": "milestones",
+  "lifeStage": "adult"
+ },
+ {
+  "text": "Tell us about a moment that changed your life.",
+  "category": "milestones",
+  "lifeStage": "adult"
+ },
+ {
+  "text": "What award or recognition meant the most to you?",
+  "category": "milestones",
+  "lifeStage": "adult"
+ },
+ {
+  "text": "Describe a goal you achieved against the odds.",
+  "category": "milestones",
+  "lifeStage": "adult"
+ },
+ {
+  "text": "What's your all-time favorite movie and why?",
+  "category": "favorites",
+  "lifeStage": null
+ },
+ {
+  "text": "Tell us about your favorite book.",
+  "category": "favorites",
+  "lifeStage": null
+ },
+ {
+  "text": "What's your comfort food?",
+  "category": "favorites",
+  "lifeStage": null
+ },
+ {
+  "text": "Describe your favorite place in the world.",
+  "category": "favorites",
+  "lifeStage": null
+ },
+ {
+  "text": "What song takes you back in time?",
+  "category": "favorites",
+  "lifeStage": null
+ },
+ {
+  "text": "What's your favorite season and why?",
+  "category": "favorites",
+  "lifeStage": null
+ },
+ {
+  "text": "Tell us about your favorite hobby.",
+  "category": "favorites",
+  "lifeStage": null
+ },
+ {
+  "text": "What's the most adventurous thing you've ever done?",
+  "category": "adventures",
+  "lifeStage": "young_adult"
+ },
+ {
+  "text": "Tell us about a memorable trip.",
+  "category": "adventures",
+  "lifeStage": "adult"
+ },
+ {
+  "text": "Describe a time you tried something completely new.",
+  "category": "adventures",
+  "lifeStage": "adult"
+ },
+ {
+  "text": "What's still on your bucket list?",
+  "category": "adventures",
+  "lifeStage": "senior"
+ },
+ {
+  "text": "Tell us about a spontaneous decision that turned into an adventure.",
+  "category": "adventures",
+  "lifeStage": "young_adult"
+ },
+ {
+  "text": "What place would you love to visit (or revisit)?",
+  "category": "adventures",
+  "lifeStage": null
+ },
+ {
+  "text": "Tell us about a difficult time and how you got through it.",
+  "category": "challenges",
+  "lifeStage": "adult"
+ },
+ {
+  "text": "What's the hardest decision you ever had to make?",
+  "category": "challenges",
+  "lifeStage": "adult"
+ },
+ {
+  "text": "Describe how you overcame a fear.",
+  "category": "challenges",
+  "lifeStage": "adult"
+ },
+ {
+  "text": "What obstacle made you stronger?",
+  "category": "challenges",
+  "lifeStage": "adult"
+ },
+ {
+  "text": "Tell us about a failure that taught you something important.",
+  "category": "challenges",
+  "lifeStage": "adult"
+ },
+ {
+  "text": "How did you cope with loss or grief?",
+  "category": "challenges",
+  "lifeStage": "adult"
+ },
+ {
+  "text": "What are you most grateful for in life?",
+  "category": "gratitude",
+  "lifeStage": "senior"
+ },
+ {
+  "text": "Who has had the biggest positive impact on your life?",
+  "category": "gratitude",
+  "lifeStage": "adult"
+ },
+ {
+  "text": "What simple pleasures bring you joy?",
+  "category": "gratitude",
+  "lifeStage": null
+ },
+ {
+  "text": "Tell us about a kindness someone showed you.",
+  "category": "gratitude",
+  "lifeStage": "adult"
+ },
+ {
+  "text": "What's something small you appreciate that others might overlook?",
+  "category": "gratitude",
+  "lifeStage": "senior"
+ },
+ {
+  "text": "Who would you like to thank and why?",
+  "category": "gratitude",
+  "lifeStage": "senior"
+ },
+ {
+  "text": "What's your earliest memory? Where were you and who was there?",
+  "category": "childhood",
+  "lifeStage": "early_childhood"
+ },
+ {
+  "text": "What games did you play as a child? Who did you play with?",
+  "category": "childhood",
+  "lifeStage": "childhood"
+ },
+ {
+  "text": "Describe your childhood home. What room was your favorite?",
+  "category": "childhood",
+  "lifeStage": "childhood"
+ },
+ {
+  "text": "What was a typical Sunday like when you were growing up?",
+  "category": "childhood",
+  "lifeStage": "childhood"
+ },
+ {
+  "text": "Did you have a favorite toy or stuffed animal? What made it special?",
+  "category": "childhood",
+  "lifeStage": "early_childhood"
+ },
+ {
+  "text": "What was your neighborhood like growing up? Who were your neighbors?",
+  "category": "childhood",
+  "lifeStage": "childhood"
+ },
+ {
+  "text": "What did you want to be when you grew up? Did it change over time?",
+  "category": "childhood",
+  "lifeStage": "childhood"
+ },
+ {
+  "text": "Were there any rules in your household that you thought were unfair?",
+  "category": "childhood",
+  "lifeStage": "childhood"
+ },
+ {
+  "text": "Who was your favorite teacher? What made them special?",
+  "category": "education",
+  "lifeStage": "childhood"
+ },
+ {
+  "text": "What was your school like? How did you get there each day?",
+  "category": "education",
+  "lifeStage": "childhood"
+ },
+ {
+  "text": "Did you have a favorite subject in school? What drew you to it?",
+  "category": "education",
+  "lifeStage": "teenage"
+ },
+ {
+  "text": "Tell me about your graduation day. How did you feel?",
+  "category": "education",
+  "lifeStage": "teenage"
+ },
+ {
+  "text": "Was there a book that changed the way you see the world?",
+  "category": "education",
+  "lifeStage": "young_adult"
+ },
+ {
+  "text": "What's something you learned outside of school that shaped your life?",
+  "category": "education",
+  "lifeStage": "adult"
+ },
+ {
+  "text": "What was your first job? How did you get it?",
+  "category": "career",
+  "lifeStage": "teenage"
+ },
+ {
+  "text": "What's the best career advice you ever received?",
+  "category": "career",
+  "lifeStage": "adult"
+ },
+ {
+  "text": "Tell me about a mentor who influenced your career path.",
+  "category": "career",
+  "lifeStage": "young_adult"
+ },
+ {
+  "text": "What accomplishment at work are you most proud of?",
+  "category": "career",
+  "lifeStage": "adult"
+ },
+ {
+  "text": "If you could go back, would you choose the same career path?",
+  "category": "career",
+  "lifeStage": "senior"
+ },
+ {
+  "text": "What did you learn from a failure or setback at work?",
+  "category": "career",
+  "lifeStage": "adult"
+ },
+ {
+  "text": "Tell me about your parents. What were they like?",
+  "category": "family",
+  "lifeStage": "childhood"
+ },
+ {
+  "text": "What's your favorite memory with your siblings?",
+  "category": "family",
+  "lifeStage": "childhood"
+ },
+ {
+  "text": "How did you meet your spouse or partner?",
+  "category": "family",
+  "lifeStage": "young_adult"
+ },
+ {
+  "text": "What was it like becoming a parent for the first time?",
+  "category": "family",
+  "lifeStage": "adult"
+ },
+ {
+  "text": "What family traditions did you grow up with that you've passed down?",
+  "category": "family",
+  "lifeStage": "adult"
+ },
+ {
+  "text": "Tell me about a grandparent or great-grandparent. What do you remember about them?",
+  "category": "family",
+  "lifeStage": "childhood"
+ },
+ {
+  "text": "What's the best advice your mother or father gave you?",
+  "category": "family",
+  "lifeStage": "adult"
+ },
+ {
+  "text": "How has becoming a grandparent changed your perspective?",
+  "category": "family",
+  "lifeStage": "senior"
+ },
+ {
+  "text": "Tell me about your first love. What happened?",
+  "category": "love",
+  "lifeStage": "teenage"
+ },
+ {
+  "text": "What's the most romantic thing someone has done for you?",
+  "category": "love",
+  "lifeStage": "young_adult"
+ },
+ {
+  "text": "How did you know your partner was 'the one'?",
+  "category": "love",
+  "lifeStage": "young_adult"
+ },
+ {
+  "text": "What's the secret to a lasting relationship?",
+  "category": "love",
+  "lifeStage": "senior"
+ },
+ {
+  "text": "Describe your wedding day. What do you remember most?",
+  "category": "love",
+  "lifeStage": "young_adult"
+ },
+ {
+  "text": "What holiday traditions meant the most to your family?",
+  "category": "traditions",
+  "lifeStage": "childhood"
+ },
+ {
+  "text": "Is there a family recipe that's been passed down through generations?",
+  "category": "traditions",
+  "lifeStage": "adult"
+ },
+ {
+  "text": "How did your family celebrate birthdays when you were young?",
+  "category": "traditions",
+  "lifeStage": "childhood"
+ },
+ {
+  "text": "What religious or cultural traditions shaped your upbringing?",
+  "category": "traditions",
+  "lifeStage": "childhood"
+ },
+ {
+  "text": "Are there any family sayings or expressions that get repeated?",
+  "category": "traditions",
+  "lifeStage": "adult"
+ },
+ {
+  "text": "What advice would you give to your younger self?",
+  "category": "wisdom",
+  "lifeStage": "senior"
+ },
+ {
+  "text": "What do you hope future generations will remember about you?",
+  "category": "wisdom",
+  "lifeStage": "senior"
+ },
+ {
+  "text": "What does happiness mean to you? Has that changed over time?",
+  "category": "wisdom",
+  "lifeStage": "senior"
+ },
+ {
+  "text": "If you could live your life again, what would you do differently?",
+  "category": "wisdom",
+  "lifeStage": "senior"
+ },
+ {
+  "text": "What values do you hope to pass on to your family?",
+  "category": "wisdom",
+  "lifeStage": "senior"
+ },
+ {
+  "text": "Tell me about a moment that changed the direction of your life.",
+  "category": "milestones",
+  "lifeStage": "adult"
+ },
+ {
+  "text": "What's the bravest thing you've ever done?",
+  "category": "milestones",
+  "lifeStage": "adult"
+ },
+ {
+  "text": "Describe a moment when you felt truly proud of yourself.",
+  "category": "milestones",
+  "lifeStage": "adult"
+ },
+ {
+  "text": "What's the hardest decision you've ever had to make?",
+  "category": "milestones",
+  "lifeStage": "adult"
+ },
+ {
+  "text": "What's your favorite meal? Does it have a story behind it?",
+  "category": "favorites",
+  "lifeStage": "adult"
+ },
+ {
+  "text": "What song takes you right back to a specific moment in time?",
+  "category": "favorites",
+  "lifeStage": "adult"
+ },
+ {
+  "text": "What's your favorite place you've ever visited? Why?",
+  "category": "favorites",
+  "lifeStage": "adult"
+ },
+ {
+  "text": "Who's been your closest friend throughout life? How did you meet?",
+  "category": "favorites",
+  "lifeStage": "adult"
+ },
+ {
+  "text": "Tell me about a trip that didn't go as planned.",
+  "category": "adventures",
+  "lifeStage": "adult"
+ },
+ {
+  "text": "What's somewhere you've always wanted to go but haven't?",
+  "category": "adventures",
+  "lifeStage": "adult"
+ },
+ {
+  "text": "What's the biggest risk you ever took? Was it worth it?",
+  "category": "adventures",
+  "lifeStage": "adult"
+ },
+ {
+  "text": "Tell me about a time you overcame something really difficult.",
+  "category": "challenges",
+  "lifeStage": "adult"
+ },
+ {
+  "text": "What's helped you get through the hardest times in life?",
+  "category": "challenges",
+  "lifeStage": "adult"
+ },
+ {
+  "text": "Is there a loss that shaped who you became?",
+  "category": "challenges",
+  "lifeStage": "adult"
+ },
+ {
+  "text": "What did you learn about yourself during a challenging period?",
+  "category": "challenges",
+  "lifeStage": "adult"
+ },
+ {
+  "text": "Who are you most grateful for in your life?",
+  "category": "gratitude",
+  "lifeStage": "senior"
+ },
+ {
+  "text": "What's something small that brings you joy every day?",
+  "category": "gratitude",
+  "lifeStage": "adult"
+ },
+ {
+  "text": "What opportunity changed your life for the better?",
+  "category": "gratitude",
+  "lifeStage": "adult"
+ },
+ {
+  "text": "What's something you appreciate now that you took for granted when younger?",
+  "category": "gratitude",
+  "lifeStage": "senior"
+ }
+]
