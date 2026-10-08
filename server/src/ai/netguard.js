@@ -28,6 +28,7 @@ function ipv6Private(ip) {
  */
 function isPrivateHost(hostname) {
   const h = String(hostname).replace(/^\[|\]$/g, '').toLowerCase();
+  if (!h) return false;
   if (net.isIPv4(h)) return ipv4Private(h);
   if (net.isIPv6(h)) return ipv6Private(h);
   if (h === 'localhost') return true;
@@ -40,7 +41,7 @@ function assertPrivateUrl(raw) {
   try {
     u = new URL(String(raw));
   } catch {
-    throw new Error(`"${raw}" is not a valid URL`);
+    throw new Error('is not a valid URL (check the AI_NODES url field)');
   }
   if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error('URL must start with http:// or https://');
   if (!isPrivateHost(u.hostname)) {

@@ -34,7 +34,9 @@ function parseNodes(raw, problems) {
     if (!caps.length || !caps.every((c) => CAPS.includes(c))) {
       problems.push(`${where}.capabilities must be a non-empty subset of: ${CAPS.join(', ')}.`);
     }
-    const models = n.models && typeof n.models === 'object' ? n.models : {};
+    const models = {};
+    const rawModels = n.models && typeof n.models === 'object' ? n.models : {};
+    for (const [k, v] of Object.entries(rawModels)) models[k] = typeof v === 'string' ? v.trim() : v;
     for (const c of caps) {
       if (typeof models[c] !== 'string' || !models[c].trim()) {
         problems.push(`${where}.models.${c} is required because the node declares "${c}".`);
@@ -63,8 +65,12 @@ function intIn(env, key, def, min, max, problems) {
 function parseAi(env, problems) {
   const enabled = String(env.AI_ENABLED || 'false').toLowerCase() === 'true';
   const raw = (env.AI_NODES || '').trim();
+  const before = problems.length;
   const nodes = raw ? parseNodes(raw, problems) : [];
-  if (enabled && !nodes.length && !raw) problems.push('AI_ENABLED=true needs at least one node in AI_NODES.');
+  // Fire for unset AND for a list that parses to zero nodes, unless parseNodes already reported why.
+  if (enabled && !nodes.length && problems.length === before) {
+    problems.push('AI_ENABLED=true needs at least one node in AI_NODES.');
+  }
   const embedModels = [...new Set(nodes.filter((n) => n.capabilities.includes('embed')).map((n) => n.models.embed))];
   if (embedModels.length > 1) {
     problems.push(`Every node that declares "embed" must use the same embedding model (vectors from different models cannot be compared). Found: ${embedModels.join(', ')}.`);

@@ -6,6 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { isPrivateHost, assertPrivateUrl } = require('../src/ai/netguard');
+const { parseAi } = require('../src/ai/config');
 const { load, ConfigError } = require('../src/config');
 
 test('isPrivateHost accepts private ranges and rejects public ones', () => {
@@ -15,6 +16,7 @@ test('isPrivateHost accepts private ranges and rejects public ones', () => {
     'example.com', 'api.openai.com', '[::ffff:808:808]'];
   for (const h of ok) assert.equal(isPrivateHost(h), true, h);
   for (const h of bad) assert.equal(isPrivateHost(h), false, h);
+  assert.equal(isPrivateHost(''), false);
 });
 
 test('assertPrivateUrl normalises and rejects bad schemes / public hosts', () => {
@@ -23,6 +25,13 @@ test('assertPrivateUrl normalises and rejects bad schemes / public hosts', () =>
   assert.throws(() => assertPrivateUrl('https://api.openai.com'), /private network/);
   assert.throws(() => assertPrivateUrl('ftp://127.0.0.1'), /http/);
   assert.throws(() => assertPrivateUrl('not a url'), /valid URL/);
+});
+
+test('assertPrivateUrl does not echo the raw input in its error', () => {
+  assert.throws(
+    () => assertPrivateUrl('sekrit not a url'),
+    (e) => /valid URL/.test(e.message) && !e.message.includes('sekrit')
+  );
 });
 
 const tmpDirs = [];
@@ -80,4 +89,20 @@ test('config refuses bad AI settings with clear messages', () => {
   assert.match(problems({ AI_NODES: JSON.stringify([node(), node()]) }), /used twice/);
   assert.match(problems({ AI_NODES: JSON.stringify([node(), node({ name: 'b', models: { transcribe: 'w', embed: 'OTHER', chat: 'c' } })]) }), /same embedding model/);
   assert.match(problems({ AI_MAX_CHUNK_TOKENS: '5' }), /AI_MAX_CHUNK_TOKENS/);
+});
+
+test('AI_NODES that parses to zero nodes is refused', () => {
+  assert.match(problems({ AI_ENABLED: 'true', AI_NODES: '[]' }), /at least one node/);
+  assert.match(problems({ AI_ENABLED: 'true', AI_NODES: '{nope' }), /valid JSON/);
+});
+
+test('embed model strings are trimmed before the same-model check', () => {
+  const p = [];
+  const cfg = parseAi({
+    AI_ENABLED: 'true',
+    AI_NODES: JSON.stringify([node(), node({ name: 'b', models: { transcribe: 'w', embed: 'e ', chat: 'c' } })]),
+  }, p);
+  assert.doesNotMatch(p.join(' | '), /same embedding model/);
+  assert.equal(cfg.nodes[1].models.embed, 'e');
+  assert.equal(cfg.embedModel, 'e');
 });
