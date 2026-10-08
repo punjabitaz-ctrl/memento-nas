@@ -4,16 +4,21 @@ const { VISIBLE, canView } = require('../memories');
 const { normalize } = require('./embed');
 const { memoryText } = require('./hooks');
 const { ftsQuery } = require('../util');
+const { NodeError } = clientDefault;
 const { NodeUnavailable, NoEligibleNode } = require('./errors');
 
 const RRF_K = 60; // reciprocal rank fusion constant (standard default)
 const KEYWORD_LIMIT = 20;
 const VECTOR_LIMIT = 20;
 
-/** Brute-force cosine over visible chunks. Family-sized archives only; measured before scaling (see ai-eval notes). */
+/**
+ * Brute-force cosine over visible chunks: fine at family scale, measure before changing.
+ * Only the id and vector are read during the scan; the text is fetched for the final top-k alone.
+ * Returns [{ memoryId, text, score }], best first.
+ */
 function scanChunks(db, qv, { uid, model, limit }) {
   const stmt = db.prepare(
-    `SELECT c.memory_id AS memoryId, c.text, c.embedding FROM chunks c JOIN memories m ON m.id = c.memory_id WHERE c.model = @model AND ${VISIBLE}`
+    `SELECT c.id AS chunkId, c.memory_id AS memoryId, c.embedding FROM chunks c JOIN memories m ON m.id = c.memory_id WHERE c.model = @model AND ${VISIBLE}`
   );
   const top = [];
   for (const row of stmt.iterate({ model, uid })) {
@@ -21,13 +26,18 @@ function scanChunks(db, qv, { uid, model, limit }) {
     if (buf.length !== qv.length * 4) continue; // vector from a different dimension: not comparable
     let dot = 0;
     for (let i = 0; i < qv.length; i++) dot += qv[i] * buf.readFloatLE(i * 4);
+    if (!Number.isFinite(dot)) continue; // corrupt vector: never let NaN into the ranking
     if (top.length < limit || dot > top[top.length - 1].score) {
-      top.push({ memoryId: row.memoryId, text: row.text, score: dot });
+      top.push({ chunkId: row.chunkId, memoryId: row.memoryId, score: dot });
       top.sort((a, b) => b.score - a.score);
       if (top.length > limit) top.pop();
     }
   }
-  return top;
+  if (!top.length) return [];
+  const texts = new Map(
+    db.prepare(`SELECT id, text FROM chunks WHERE id IN (${top.map(() => '?').join(',')})`).all(...top.map((t) => t.chunkId)).map((r) => [r.id, r.text])
+  );
+  return top.map((t) => ({ memoryId: t.memoryId, text: texts.get(t.chunkId), score: t.score }));
 }
 
 /**
@@ -55,7 +65,9 @@ async function retrieve({ db, registry, config, user, question, k = 6, client = 
 
   let mode = 'keyword';
   let degraded = false;
-  if (config.ai.enabled && config.ai.embedModel && registry && registry.hasEligible('embed', 'family')) {
+  // A question with no letters or digits cannot be embedded meaningfully: skip the node round trip.
+  const embeddable = /[\p{L}\p{N}]/u.test(String(question || ''));
+  if (embeddable && config.ai.enabled && config.ai.embedModel && registry && registry.hasEligible('embed', 'family')) {
     try {
       // The question is the asker's own words, not a memory, so any node may embed it.
       const [qv] = await registry.withNode('embed', 'family', (node) => client.embed(node, [question]));
@@ -67,10 +79,13 @@ async function retrieve({ db, registry, config, user, question, k = 6, client = 
         if (list.length < 2) list.push(h.text);
         if (!seen.has(h.memoryId)) { seen.add(h.memoryId); add(h.memoryId, ++rank, 'vec'); }
       }
-      mode = 'hybrid';
+      // Nothing embedded with the configured model yet (model changed, backfill pending): keyword only.
+      if (db.prepare('SELECT 1 FROM chunks WHERE model = ? LIMIT 1').get(config.ai.embedModel)) mode = 'hybrid';
     } catch (e) {
-      if (!(e instanceof NodeUnavailable) && !(e instanceof NoEligibleNode)) throw e;
-      degraded = e instanceof NodeUnavailable;
+      // Any failure of the embed/vector step (node down, HTTP 400/401, malformed reply) degrades to keyword search.
+      // Anything else is a programmer error and must surface.
+      if (!(e instanceof NodeUnavailable) && !(e instanceof NodeError) && !(e instanceof NoEligibleNode)) throw e;
+      degraded = !(e instanceof NoEligibleNode);
     }
   }
 

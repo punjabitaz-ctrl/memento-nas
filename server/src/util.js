@@ -108,10 +108,13 @@ const STOP_WORDS = new Set((
  * mode 'or': distinct non-stop-words joined with OR; used for natural-language questions.
  */
 function ftsQuery(q, { mode = 'and' } = {}) {
-  const words = String(q || '').match(/[\p{L}\p{N}]+/gu) || [];
+  // \p{M}: combining marks (Gurmukhi, Devanagari, accents) belong inside words, or they fragment at every vowel sign.
+  const words = String(q || '').match(/[\p{L}\p{N}\p{M}]+/gu) || [];
   if (!words.length) return null;
   if (mode === 'or') {
-    const list = [...new Set(words.map((w) => w.toLowerCase()).filter((w) => w.length >= 3 && !STOP_WORDS.has(w)))].slice(0, 12);
+    // The >= 3 rule and the stop list are for ASCII words; any non-ASCII word (a CJK or Indic word can be 1-2 code points) is kept.
+    const keep = (w) => (/^[\x00-\x7f]+$/.test(w) ? w.length >= 3 && !STOP_WORDS.has(w) : [...w].length >= 1);
+    const list = [...new Set(words.map((w) => w.toLowerCase()).filter(keep))].slice(0, 12);
     return list.length ? list.map((w) => `"${w}"`).join(' OR ') : null;
   }
   return words.slice(0, 12).map((w, i, a) => `"${w}"${i === a.length - 1 ? '*' : ''}`).join(' ');
